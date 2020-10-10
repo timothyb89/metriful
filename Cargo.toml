@@ -1,0 +1,45 @@
+[package]
+name = "metriful"
+version = "0.1.0"
+authors = ["Tim Buckley <timothyb89@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# base requirements
+i2cdev = "0.4"
+sysfs_gpio = "0.5"
+bytes = "0.5"
+err-derive = "0.2"
+log = "0.4"
+lazy_static = "1.4"
+
+# requirements for all bins
+anyhow = { version = "1.0", optional = true }
+env_logger = { version = "0.7", optional = true }
+structopt = { version = "0.3", optional = true }
+chrono = { version = "0.4", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true}
+serde_json = { version = "1.0", optional = true }
+
+# requirements for exporter
+warp = { version = "0.2", optional = true }
+tokio = { version = "0.2", features = ["macros"], optional = true }
+simple-prometheus-exporter = { git = "https://github.com/timothyb89/simple-prometheus-exporter-rs", tag = "v0.1.0", optional = true }
+
+[features]
+default = []
+
+bin = ["anyhow", "env_logger", "structopt", "chrono", "serde", "serde_json"]
+exporter = ["warp", "tokio", "simple-prometheus-exporter"]
+
+[[bin]]
+name = "metriful-exporter"
+path = "src/bin/metriful_exporter.rs"
+required-features = ["bin", "exporter"]
+
+[[bin]]
+name = "metriful-tool"
+path = "src/bin/metriful_tool.rs"
+required-features = ["bin"]

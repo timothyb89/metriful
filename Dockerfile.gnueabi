@@ -1,0 +1,29 @@
+FROM debian:buster as build
+
+COPY etc/sources.list.armel /etc/apt/sources.list
+COPY etc/cargo-config.toml /root/.cargo/config
+
+RUN dpkg --add-architecture armel && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        curl git \
+        pkg-config make cmake file ca-certificates g++ \
+        gcc-arm-linux-gnueabi g++-arm-linux-gnueabi \
+        libc6-dev-armel-cross binutils-arm-linux-gnueabi \
+        libudev-dev libudev-dev:armel
+
+ENV PATH=/root/.cargo/bin:$PATH \
+    RUST_TARGETS="arm-unknown-linux-gnueabi" \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabi/pkgconfig \
+    RUST_BACKTRACE=1
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
+    rustup target add arm-unknown-linux-gnueabi
+
+COPY Cargo.lock Cargo.toml /project/
+COPY src /project/src
+
+WORKDIR /project
+
+RUN cargo build --release --target=arm-unknown-linux-gnueabi --bins --all-features
