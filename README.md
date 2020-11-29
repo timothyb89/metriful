@@ -15,8 +15,11 @@ This project plays well with [`cross`]. To build for all Raspberry Pis and
 similar boards (`arm-unknown-linux-gnueabi`):
 
 ```
-cross build --target=arm-unknown-linux-gnueabi --all-features --bins
+cross build --target-dir $(pwd)/target-cross --target=arm-unknown-linux-gnueabi --all-features --bins
 ```
+
+(note: `--target-dir` is recommended to prevent spurious rebuilds when using
+both `cargo build` and `cross build`)
 
 Alternatively, the two Dockerfiles have working cross-compiling environments
 but are unpleasant to use for development.

@@ -72,6 +72,8 @@ fn main() -> Result<()> {
 
   info!("metriful sensor is ready");
 
+  info!("device status: {:#?}", metriful.read_status());
+
   loop {
     println!("temperature: {}", metriful.read(&METRIC_TEMPERATURE)?);
     println!("pressure:    {}", metriful.read(&METRIC_PRESSURE)?);

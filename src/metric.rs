@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use crate::error::*;
 use crate::unit::*;
 
+#[derive(Debug, Copy, Clone)]
 pub struct Metric<U> where U: MetrifulUnit {
   pub register: u8,
   pub unit: U
