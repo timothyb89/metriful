@@ -1,12 +1,9 @@
-#[macro_use] extern crate log;
-
-use std::{fmt, thread, time::{Duration, Instant}};
+use std::{path::Path, fmt, thread, time::{Duration, Instant}};
 
 use bytes::{Bytes, Buf};
 use i2cdev::core::*;
 use i2cdev::linux::LinuxI2CDevice;
-use sysfs_gpio::Pin;
-
+use sysfs_gpio::{Direction, Pin};
 
 pub mod error;
 pub mod metric;
@@ -205,10 +202,10 @@ impl DeviceStatus {
       _ => InterruptStatus::Enabled(SoundInterrupt::read(device)?)
     };
 
-    let mode = match dbg!(device.smbus_read_byte_data(0x8A)?) {
+    let mode = match device.smbus_read_byte_data(0x8A)? {
       0 => OperationalMode::Standby,
       1 => OperationalMode::Cycle(
-        CyclePeriod::from_value(dbg!(device.smbus_read_byte_data(0x89)?))?
+        CyclePeriod::from_value(device.smbus_read_byte_data(0x89)?)?
       ),
       byte => return Err(MetrifulError::InvalidOperationalMode(byte))
     };
@@ -283,6 +280,25 @@ impl Metriful {
       ready_pin, device,
       status: None
     }
+  }
+
+  pub fn try_new(
+    gpio_ready: u64,
+    i2c_device: &Path,
+    i2c_address: u16
+  ) -> Result<Metriful> {
+    let ready_pin = Pin::new(gpio_ready);
+    ready_pin.export()?;
+    ready_pin.set_active_low(false)?;
+    ready_pin.set_direction(Direction::In)?;
+
+    let device = LinuxI2CDevice::new(i2c_device, i2c_address)?;
+
+    Ok(Metriful {
+      ready_pin,
+      device,
+      status: None
+    })
   }
 
   /// Returns true if the sensor's ready pin is asserted.

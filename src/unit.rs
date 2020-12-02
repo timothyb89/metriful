@@ -33,7 +33,7 @@ impl From<Option<&'static str>> for UnitSymbol {
   }
 }
 
-pub trait MetrifulUnit: Sized + Default {
+pub trait MetrifulUnit: Sized + Default + fmt::Debug {
   /// This unit's native datatype.
   type Output: fmt::Display;
 

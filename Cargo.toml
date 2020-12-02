@@ -12,11 +12,11 @@ i2cdev = "0.4"
 sysfs_gpio = "0.5"
 bytes = "0.5"
 err-derive = "0.2"
-log = "0.4"
 lazy_static = "1.4"
+log = "0.4"
 
 # requirements for all bins
-anyhow = { version = "1.0", optional = true }
+color-eyre = { version = "0.5", optional = true, default-features = false, features = ["track-caller"] }
 env_logger = { version = "0.7", optional = true }
 structopt = { version = "0.3", optional = true }
 chrono = { version = "0.4", optional = true }
@@ -31,7 +31,7 @@ simple-prometheus-exporter = { git = "https://github.com/timothyb89/simple-prome
 [features]
 default = []
 
-bin = ["anyhow", "env_logger", "structopt", "chrono", "serde", "serde_json"]
+bin = ["env_logger", "color-eyre", "structopt", "chrono", "serde", "serde_json"]
 exporter = ["warp", "tokio", "simple-prometheus-exporter"]
 
 [[bin]]

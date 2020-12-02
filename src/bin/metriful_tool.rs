@@ -1,16 +1,12 @@
-#[macro_use] extern crate log;
-
 use std::path::PathBuf;
 use std::time::Duration;
 use std::thread;
 
+use color_eyre::eyre::{Result, Context};
+use log::*;
 use structopt::StructOpt;
-use anyhow::{Result, Context};
 
-use sysfs_gpio::{Direction, Pin};
-use i2cdev::linux::*;
-
-use metriful::{Metriful, METRIFUL_ADDRESS};
+use metriful::Metriful;
 use metriful::metric::*;
 
 fn try_from_hex_arg(s: &str) -> Result<u16> {
@@ -41,6 +37,8 @@ struct Options {
 }
 
 fn main() -> Result<()> {
+  color_eyre::install()?;
+
   let env = env_logger::Env::default()
     .filter_or("METRIFUL_LOG", "info")
     .write_style_or("METRIFUL_STYLE", "always");
@@ -52,20 +50,13 @@ fn main() -> Result<()> {
   let opts: Options = Options::from_args();
   debug!("options: {:?}", opts);
 
-  let ready_pin = Pin::new(opts.gpio_ready);
-  ready_pin.export()?;
-  ready_pin.set_active_low(false)?;
-  ready_pin.set_direction(Direction::In)?;
-
-  let device = LinuxI2CDevice::new(opts.device, METRIFUL_ADDRESS)?;
-
-  let mut metriful = Metriful::new(ready_pin, device);
+  let mut metriful = Metriful::try_new(opts.gpio_ready, &opts.device, opts.i2c_address)?;
 
   loop {
     if metriful.is_ready()? {
       break;
     } else {
-      warn!("sensor is not ready, waiting... ({:?})", ready_pin.get_value());
+      warn!("sensor is not ready, waiting...");
       thread::sleep(Duration::from_millis(100));
     }
   }
