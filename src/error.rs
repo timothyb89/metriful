@@ -1,9 +1,11 @@
 use err_derive::Error;
 use i2cdev::linux::LinuxI2CError;
 
+use crate::OperationalMode;
+
 #[derive(Debug, Error)]
 pub enum MetrifulError {
-  #[error(display = "i2c error: {}", _0)]
+  #[error(display = "i2c error: {:?}", _0)]
   I2CError(#[error(source)] LinuxI2CError),
 
   #[error(display = "gpio error: {}", _0)]
@@ -19,7 +21,19 @@ pub enum MetrifulError {
   InvalidOperationalMode(u8),
 
   #[error(display = "exceeded timeout waiting for sensor to become ready")]
-  ReadyTimeoutExceeded
+  ReadyTimeoutExceeded,
+
+  #[error(display = "device status is required")]
+  StatusMissing,
+
+  #[error(display = "sensor is not in ready state")]
+  NotReady,
+
+  #[error(display = "command requires mode {:?} but current mode is {:?}", current, required)]
+  InvalidMode {
+    current: OperationalMode,
+    required: OperationalMode,
+  }
 }
 
 pub type Result<T> = std::result::Result<T, MetrifulError>;

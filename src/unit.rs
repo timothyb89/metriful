@@ -33,9 +33,9 @@ impl From<Option<&'static str>> for UnitSymbol {
   }
 }
 
-pub trait MetrifulUnit: Sized + Default + fmt::Debug {
+pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone {
   /// This unit's native datatype.
-  type Output: fmt::Display;
+  type Output: fmt::Display + fmt::Debug;
 
   /// The human-readable name of the unit
   fn name() -> &'static str;
@@ -62,7 +62,7 @@ pub trait MetrifulUnit: Sized + Default + fmt::Debug {
   }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct UnitDegreesCelsius;
 
 impl MetrifulUnit for UnitDegreesCelsius {
@@ -85,7 +85,7 @@ impl MetrifulUnit for UnitDegreesCelsius {
   }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct UnitPascals;
 
 impl MetrifulUnit for UnitPascals {
@@ -105,7 +105,7 @@ impl MetrifulUnit for UnitPascals {
   }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct UnitAWeightedDecibels;
 
 impl MetrifulUnit for UnitAWeightedDecibels {
@@ -128,6 +128,7 @@ impl MetrifulUnit for UnitAWeightedDecibels {
   }
 }
 
+#[derive(Debug)]
 pub struct DecibelBands {
 
 }

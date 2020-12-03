@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{time::Instant, path::PathBuf};
 use std::time::Duration;
 use std::thread;
 
@@ -51,23 +51,22 @@ fn main() -> Result<()> {
   debug!("options: {:?}", opts);
 
   let mut metriful = Metriful::try_new(opts.gpio_ready, &opts.device, opts.i2c_address)?;
-
-  loop {
-    if metriful.is_ready()? {
-      break;
-    } else {
-      warn!("sensor is not ready, waiting...");
-      thread::sleep(Duration::from_millis(100));
-    }
-  }
+  info!("waiting for sensor to become ready...");
+  metriful.wait_for_ready()?;
 
   info!("metriful sensor is ready");
 
   info!("device status: {:#?}", metriful.read_status());
 
+  let instant = Instant::now();
+  let temps = metriful.read_iter(*METRIC_TEMPERATURE, Duration::from_secs(3))
+    .take(5)
+    .collect::<Vec<_>>();
+  info!("read_iter took {:?} and collected: {:?}", instant.elapsed(), &temps);
+
   loop {
-    println!("temperature: {}", metriful.read(&METRIC_TEMPERATURE)?);
-    println!("pressure:    {}", metriful.read(&METRIC_PRESSURE)?);
+    println!("temperature: {}", metriful.read(*METRIC_TEMPERATURE)?);
+    println!("pressure:    {}", metriful.read(*METRIC_PRESSURE)?);
     thread::sleep(Duration::from_millis(5000));
   }
 }
