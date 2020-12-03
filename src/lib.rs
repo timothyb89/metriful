@@ -322,18 +322,42 @@ where
 }
 
 impl Metriful {
-  /// Creates a new Metriful given a preexisting GPIO `Pin` and `LinuxI2CDevice`
-  pub fn new(ready_pin: Pin, device: LinuxI2CDevice) -> Metriful {
-    Metriful {
+
+
+  /// Creates a new Metriful given a preexisting GPIO `Pin` and
+  /// `LinuxI2CDevice`. This ensures the device is ready and fetches the current
+  /// state. Returns an error if the timeout is set and exceeded, or if device
+  /// status cannot be read.
+  ///
+  /// Note that this does not reset the device. The manual recommends doing so
+  /// before use; call `Metriful::reset()` to do so.
+  pub fn try_new_device_timeout(
+    ready_pin: Pin,
+    device: LinuxI2CDevice,
+    timeout: Option<Duration>,
+  ) -> Result<Metriful> {
+    let mut ret = Metriful {
       ready_pin, device,
       status: None
-    }
+    };
+
+    ret.wait_for_ready_timeout(timeout)?;
+    ret.read_status()?;
+
+    Ok(ret)
   }
 
-  pub fn try_new(
+  /// Initializes a new Metriful instance and fetches the current device status.
+  /// Returns an error if the device does not become ready within the configured
+  /// timeout or if current status cannot be read.
+  ///
+  /// Note that this does not reset the device. The manual recommends doing so
+  /// before use; call `Metriful::reset()` to do so.
+  pub fn try_new_timeout(
     gpio_ready: u64,
     i2c_device: &Path,
-    i2c_address: u16
+    i2c_address: u16,
+    timeout: Option<Duration>
   ) -> Result<Metriful> {
     let ready_pin = Pin::new(gpio_ready);
     ready_pin.export()?;
@@ -342,11 +366,30 @@ impl Metriful {
 
     let device = LinuxI2CDevice::new(i2c_device, i2c_address)?;
 
-    Ok(Metriful {
+    let mut ret = Metriful {
       ready_pin,
       device,
       status: None
-    })
+    };
+
+    ret.wait_for_ready_timeout(timeout)?;
+    ret.read_status()?;
+
+    Ok(ret)
+  }
+
+  /// Initializes a new Metriful instance and fetches the current device status.
+  /// Returns an error if device status cannot be read. May block indefinitely
+  /// if the device does not become ready.
+  ///
+  /// Note that this does not reset the device. The manual recommends doing so
+  /// before use; call `Metriful::reset()` to do so.
+  pub fn try_new(
+    gpio_ready: u64,
+    i2c_device: &Path,
+    i2c_address: u16
+  ) -> Result<Metriful> {
+    Metriful::try_new_timeout(gpio_ready, i2c_device, i2c_address, None)
   }
 
   /// Returns true if the sensor's ready pin is asserted.
@@ -425,15 +468,17 @@ impl Metriful {
     self.execute_when_ready_timeout(func, None)
   }
 
-  /// Sends a device reset command. Will raise an error if the device is not
-  /// ready.
-  pub fn reset(&mut self) -> Result<()> {
+  /// Sends a device reset command, waits for it to become ready again, and
+  /// returns a refreshed `DeviceStatus`. Raises an error if the device is not
+  /// initially ready.
+  pub fn reset(&mut self) -> Result<DeviceStatus> {
     self.ensure_ready()?;
 
     self.device.smbus_write_byte(0xE2)?;
     self.sleep_write();
 
-    Ok(())
+    self.wait_for_ready()?;
+    Ok(self.read_status()?)
   }
 
   /// Sends a 'clear light interrupt' command. Will raise an error if the device
@@ -539,8 +584,6 @@ impl Metriful {
   /// Notes:
   ///  * Device must currently be in READY state
   ///  * Device must be in standby mode
-  ///  * `read_status()` must have been called at least once (even if
-  ///    implicitly)
   pub fn execute_measurement(&mut self) -> Result<()> {
     let status = match &self.status {
       Some(status) => status,
