@@ -52,8 +52,17 @@ pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone {
     }
   }
 
+  /// Length of this datatype in bytes
+  fn len() -> u8;
+
+  /// Reads this datatype from raw bytes
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output>;
+
   /// Reads the appropriate value for this unit from the given register.
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output>;
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, Self::len())?);
+    Self::from_bytes(&mut bytes)
+  }
 
   fn new_metric(register: u8) -> Metric<Self> {
     Metric {
@@ -77,8 +86,11 @@ impl MetrifulUnit for UnitDegreesCelsius {
     "\u{2103}C".into()
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+  fn len() -> u8 {
+    2
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let int_part = bytes.get_i8();
     let frac_part = bytes.get_u8();
 
@@ -100,8 +112,11 @@ impl MetrifulUnit for UnitPascals {
     Some("Pa")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 4)?);
+  fn len() -> u8 {
+    4
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     Ok(bytes.get_u32_le())
   }
 }
@@ -120,8 +135,11 @@ impl MetrifulUnit for UnitRelativeHumidity {
     Some("% RH")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+  fn len() -> u8 {
+    2
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let int_part = bytes.get_u8();
     let frac_part = bytes.get_u8();
 
@@ -143,9 +161,11 @@ impl MetrifulUnit for UnitResistance {
     Some("Ω")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 4)?);
+  fn len() -> u8 {
+    4
+  }
 
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     Ok(bytes.get_u32_le())
   }
 }
@@ -164,8 +184,11 @@ impl MetrifulUnit for UnitAirQualityIndex {
     None
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+  fn len() -> u8 {
+    3
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let int_part = bytes.get_u16_le();
     let frac_part = bytes.get_u8();
 
@@ -187,8 +210,11 @@ impl MetrifulUnit for UnitPartsPerMillion {
     Some("ppm")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+  fn len() -> u8 {
+    3
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let int_part = bytes.get_u16_le();
     let frac_part = bytes.get_u8();
 
@@ -241,8 +267,12 @@ impl MetrifulUnit for UnitAQIAccuracy {
     Some("ppm")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    AQIAccuracy::from_byte(device.smbus_read_byte_data(register)?)
+  fn len() -> u8 {
+    1
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    AQIAccuracy::from_byte(bytes.get_u8())
   }
 }
 
@@ -260,8 +290,11 @@ impl MetrifulUnit for UnitAWeightedDecibels {
     Some("dBa")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+  fn len() -> u8 {
+    2
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let uint_part = bytes.get_u8();
     let frac_part = bytes.get_u8();
 
@@ -292,8 +325,11 @@ impl MetrifulUnit for UnitDecibelBands {
     None
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 12)?);
+  fn len() -> u8 {
+    12
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let int_parts = &bytes[0..6];
     let frac_parts = &bytes[6..12];
 
@@ -323,8 +359,11 @@ impl MetrifulUnit for UnitIlluminance {
     Some("lx")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+  fn len() -> u8 {
+    3
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let uint_part = bytes.get_u16_le();
     let frac_part = bytes.get_u8();
 
@@ -346,9 +385,11 @@ impl MetrifulUnit for UnitWhiteLevel {
     None
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+  fn len() -> u8 {
+    2
+  }
 
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     Ok(bytes.get_u16_le())
   }
 }
@@ -367,8 +408,11 @@ impl MetrifulUnit for UnitMillipascal {
     Some("mPa")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+  fn len() -> u8 {
+    3
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let uint_part = bytes.get_u16_le();
     let frac_part = bytes.get_u8();
 
@@ -408,8 +452,12 @@ impl MetrifulUnit for UnitSoundMeasurementStability {
     None
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    match device.smbus_read_byte_data(register)? {
+  fn len() -> u8 {
+    1
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    match bytes.get_u8() {
       1 => Ok(SoundMeasurementStability::Stable),
       _ => Ok(SoundMeasurementStability::Unstable),
     }
@@ -430,8 +478,11 @@ impl MetrifulUnit for UnitPercent {
     Some("%")
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+  fn len() -> u8 {
+    2
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let uint_part = bytes.get_u8();
     let frac_part = bytes.get_u8();
 
@@ -492,8 +543,11 @@ impl MetrifulUnit for UnitRawParticleConcentration {
     None
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+  fn len() -> u8 {
+    3
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     let uint_part = bytes.get_u16_le();
     let frac_part = bytes.get_u8();
 
@@ -532,7 +586,6 @@ impl fmt::Display for ParticleDataValidity {
   }
 }
 
-
 #[derive(Default, Debug, Copy, Clone)]
 pub struct UnitParticleDataValidity;
 
@@ -547,7 +600,11 @@ impl MetrifulUnit for UnitParticleDataValidity {
     None
   }
 
-  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    Ok(ParticleDataValidity::from_byte(device.smbus_read_byte_data(register)?)?)
+  fn len() -> u8 {
+    1
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    Ok(ParticleDataValidity::from_byte(bytes.get_u8())?)
   }
 }

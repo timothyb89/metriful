@@ -65,8 +65,13 @@ fn main() -> Result<()> {
   info!("read_iter took {:?} and collected: {:?}", instant.elapsed(), &temps);
 
   loop {
+    metriful.execute_measurement()?;
+    metriful.wait_for_ready()?;
+
     println!("temperature: {}", metriful.read(*METRIC_TEMPERATURE)?);
     println!("pressure:    {}", metriful.read(*METRIC_PRESSURE)?);
-    thread::sleep(Duration::from_millis(5000));
+    println!("illuminance: {}", metriful.read(*METRIC_ILLUMINANCE)?);
+    println!("white level: {}", metriful.read(*METRIC_WHITE_LIGHT_LEVEL)?);
+    thread::sleep(Duration::from_millis(1000));
   }
 }
