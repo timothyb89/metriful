@@ -5,6 +5,8 @@ A Prometheus exporter and Rust crate for the [Metriful][metriful] sensor.
 As it uses [`rust-i2cdev`] and [`rust-sysfs-gpio`], it needs to run on a Linux
 host that supports I2C and GPIO, such as the Raspberry Pi.
 
+Requires rustc >= 1.48.
+
 [metriful]: https://github.com/metriful/sensor
 [`rust-i2cdev`]: https://github.com/rust-embedded/rust-i2cdev
 [`rust-sysfs-gpio`]: https://github.com/rust-embedded/rust-sysfs-gpio

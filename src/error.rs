@@ -33,7 +33,16 @@ pub enum MetrifulError {
   InvalidMode {
     current: OperationalMode,
     required: OperationalMode,
-  }
+  },
+
+  #[error(display = "invalid AQI accuracy value: {}", _0)]
+  InvalidAQIAccuracy(u8),
+
+  #[error(display = "invalid particle data validity flag: {}", _0)]
+  InvalidParticleDataValidity(u8),
+
+  #[error(display = "invalid decibel bands")]
+  DecibelBandsError
 }
 
 pub type Result<T> = std::result::Result<T, MetrifulError>;

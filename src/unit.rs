@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::fmt;
 
 use bytes::{Bytes, Buf};
@@ -81,7 +82,7 @@ impl MetrifulUnit for UnitDegreesCelsius {
     let int_part = bytes.get_i8();
     let frac_part = bytes.get_u8();
 
-    Ok(int_part as f32 + (frac_part as f32 / 10f32))
+    Ok(read_f32_with_u8_denom(int_part, frac_part))
   }
 }
 
@@ -102,6 +103,146 @@ impl MetrifulUnit for UnitPascals {
   fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
     let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 4)?);
     Ok(bytes.get_u32_le())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitRelativeHumidity;
+
+impl MetrifulUnit for UnitRelativeHumidity {
+  type Output = f32;
+
+  fn name() -> &'static str {
+    "% relative humidity"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("% RH")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+    let int_part = bytes.get_u8();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(int_part, frac_part))
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitResistance;
+
+impl MetrifulUnit for UnitResistance {
+  type Output = u32;
+
+  fn name() -> &'static str {
+    "resistance"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("Ω")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 4)?);
+
+    Ok(bytes.get_u32_le())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitAirQualityIndex;
+
+impl MetrifulUnit for UnitAirQualityIndex {
+  type Output = f32;
+
+  fn name() -> &'static str {
+    "AQI"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+    let int_part = bytes.get_u16_le();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(int_part, frac_part))
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitPartsPerMillion;
+
+impl MetrifulUnit for UnitPartsPerMillion {
+  type Output = f32;
+
+  fn name() -> &'static str {
+    "parts per million"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("ppm")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+    let int_part = bytes.get_u16_le();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(int_part, frac_part))
+  }
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum AQIAccuracy {
+  Invalid,
+  Low,
+  Medium,
+  High
+}
+
+impl AQIAccuracy {
+  pub fn from_byte(byte: u8) -> Result<AQIAccuracy> {
+    match byte {
+      0 => Ok(AQIAccuracy::Invalid),
+      1 => Ok(AQIAccuracy::Low),
+      2 => Ok(AQIAccuracy::Medium),
+      3 => Ok(AQIAccuracy::High,),
+      _ => Err(MetrifulError::InvalidAQIAccuracy(byte))
+    }
+  }
+}
+
+impl fmt::Display for AQIAccuracy {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", match self {
+      AQIAccuracy::Invalid => "invalid",
+      AQIAccuracy::Low => "low",
+      AQIAccuracy::Medium => "medium",
+      AQIAccuracy::High => "high",
+    })
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitAQIAccuracy;
+
+impl MetrifulUnit for UnitAQIAccuracy {
+  type Output = AQIAccuracy;
+
+  fn name() -> &'static str {
+    "parts per million"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("ppm")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    AQIAccuracy::from_byte(device.smbus_read_byte_data(register)?)
   }
 }
 
@@ -129,13 +270,11 @@ impl MetrifulUnit for UnitAWeightedDecibels {
 }
 
 #[derive(Debug)]
-pub struct DecibelBands {
-
-}
+pub struct DecibelBands([f32; 6]);
 
 impl fmt::Display for DecibelBands {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "TODO")
+    write!(f, "{:?}", self.0)
   }
 }
 
@@ -154,10 +293,86 @@ impl MetrifulUnit for UnitDecibelBands {
   }
 
   fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
-    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 12)?);
+    let bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 12)?);
+    let int_parts = &bytes[0..6];
+    let frac_parts = &bytes[6..12];
 
-    // TODO
-    Ok(DecibelBands {})
+    let bands: [f32; 6] = int_parts.iter()
+      .copied()
+      .zip(frac_parts.iter().copied())
+      .map(|(int_part, frac_part)| read_f32_with_u8_denom(int_part, frac_part))
+      .collect::<Vec<_>>()
+      .try_into()
+      .map_err(|_| MetrifulError::DecibelBandsError)?;
+
+    Ok(DecibelBands(bands))
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitIlluminance;
+
+impl MetrifulUnit for UnitIlluminance {
+  type Output = f32;
+
+  fn name() -> &'static str {
+    "lux"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("lx")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+    let uint_part = bytes.get_u16_le();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(uint_part, frac_part))
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitWhiteLevel;
+
+impl MetrifulUnit for UnitWhiteLevel {
+  type Output = u16;
+
+  fn name() -> &'static str {
+    "white level"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+
+    Ok(bytes.get_u16_le())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitMillipascal;
+
+impl MetrifulUnit for UnitMillipascal {
+  type Output = f32;
+
+  fn name() -> &'static str {
+    "millipascals"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("mPa")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 3)?);
+    let uint_part = bytes.get_u16_le();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(uint_part, frac_part))
   }
 }
 
@@ -202,17 +417,79 @@ impl MetrifulUnit for UnitSoundMeasurementStability {
 }
 
 #[derive(Default, Debug, Copy, Clone)]
-pub struct UnitIlluminance;
+pub struct UnitPercent;
 
-impl MetrifulUnit for UnitIlluminance {
+impl MetrifulUnit for UnitPercent {
   type Output = f32;
 
   fn name() -> &'static str {
-    "lux"
+    "percent"
   }
 
   fn symbol() -> Option<&'static str> {
-    Some("lx")
+    Some("%")
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    let mut bytes = Bytes::from(device.smbus_read_i2c_block_data(register, 2)?);
+    let uint_part = bytes.get_u8();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(uint_part, frac_part))
+  }
+}
+
+/// Raw particle concentration from attached particle sensor. Underlying
+/// datatype varies depending on sensor attached.
+///
+/// Both values are always set and should be approximately equal.
+#[derive(Debug, Copy, Clone)]
+pub struct RawParticleConcentration {
+  /// 16-bit integer with two-digit fractional part; micrograms per cubic meter
+  pub sds011_value: f32,
+
+  /// 16 bit integer; particles per liter
+  pub ppd42_value: u16,
+}
+
+impl PartialEq for RawParticleConcentration {
+  fn eq(&self, other: &Self) -> bool {
+    self.ppd42_value == other.ppd42_value
+  }
+}
+
+impl Eq for RawParticleConcentration {}
+
+impl Ord for RawParticleConcentration {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.ppd42_value.cmp(&other.ppd42_value)
+  }
+}
+
+impl PartialOrd for RawParticleConcentration {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl fmt::Display for RawParticleConcentration {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.sds011_value)
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitRawParticleConcentration;
+
+impl MetrifulUnit for UnitRawParticleConcentration {
+  type Output = RawParticleConcentration;
+
+  fn name() -> &'static str {
+    "raw particle concentration"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
   }
 
   fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
@@ -220,7 +497,57 @@ impl MetrifulUnit for UnitIlluminance {
     let uint_part = bytes.get_u16_le();
     let frac_part = bytes.get_u8();
 
-    Ok(read_f32_with_u8_denom(uint_part, frac_part))
+    Ok(RawParticleConcentration {
+      sds011_value: read_f32_with_u8_denom(uint_part, frac_part),
+      ppd42_value: uint_part
+    })
   }
 }
 
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum ParticleDataValidity {
+  /// Particle sensor is still initializing
+  Initializing,
+
+  /// Particle sensor data is "likely to have settled"
+  Settled,
+}
+
+impl ParticleDataValidity {
+  pub fn from_byte(byte: u8) -> Result<ParticleDataValidity> {
+    match byte {
+      0 => Ok(ParticleDataValidity::Initializing),
+      1 => Ok(ParticleDataValidity::Settled),
+      _ => Err(MetrifulError::InvalidParticleDataValidity(byte))
+    }
+  }
+}
+
+impl fmt::Display for ParticleDataValidity {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", match self {
+      ParticleDataValidity::Initializing => "initializing",
+      ParticleDataValidity::Settled => "settled",
+    })
+  }
+}
+
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitParticleDataValidity;
+
+impl MetrifulUnit for UnitParticleDataValidity {
+  type Output = ParticleDataValidity;
+
+  fn name() -> &'static str {
+    "particle data validity"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn read(device: &mut LinuxI2CDevice, register: u8) -> Result<Self::Output> {
+    Ok(ParticleDataValidity::from_byte(device.smbus_read_byte_data(register)?)?)
+  }
+}

@@ -322,8 +322,6 @@ where
 }
 
 impl Metriful {
-
-
   /// Creates a new Metriful given a preexisting GPIO `Pin` and
   /// `LinuxI2CDevice`. This ensures the device is ready and fetches the current
   /// state. Returns an error if the timeout is set and exceeded, or if device
@@ -336,6 +334,8 @@ impl Metriful {
     device: LinuxI2CDevice,
     timeout: Option<Duration>,
   ) -> Result<Metriful> {
+    trace!("Metriful::try_new_device_timeout(.., {:?})", timeout);
+
     let mut ret = Metriful {
       ready_pin, device,
       status: None
@@ -359,6 +359,11 @@ impl Metriful {
     i2c_address: u16,
     timeout: Option<Duration>
   ) -> Result<Metriful> {
+    trace!(
+      "Metriful::try_new_timeout({}, {}, {:x}, {:?})",
+      gpio_ready, i2c_device.display(), i2c_address, timeout
+    );
+
     let ready_pin = Pin::new(gpio_ready);
     ready_pin.export()?;
     ready_pin.set_active_low(false)?;
@@ -397,6 +402,28 @@ impl Metriful {
     Ok(self.ready_pin.get_value()? == 0)
   }
 
+  /// Returns true if the device is known to be in standby mode.
+  ///
+  /// If the device status is missing or outdated it may return false.
+  pub fn is_mode_standby(&self) -> bool {
+    if let Some(status) = &self.status {
+      matches!(status.mode, OperationalMode::Standby)
+    } else {
+      false
+    }
+  }
+
+  /// Returns true if the device is known to be in some cycle mode.
+  ///
+  /// If the device status is missing or outdated it may return false.
+  pub fn is_mode_cycle(&self) -> bool {
+    if let Some(status) = &self.status {
+      matches!(status.mode, OperationalMode::Cycle(_))
+    } else {
+      false
+    }
+  }
+
   /// Ensures the device is currently ready.
   pub fn ensure_ready(&self) -> Result<()> {
     if self.is_ready()? {
@@ -413,13 +440,13 @@ impl Metriful {
 
     loop {
       if self.is_ready()? {
-        trace!("wait_for_ready_timeout({:?}): is ready after {:?}", timeout, start.elapsed());
+        trace!("Metriful::wait_for_ready_timeout({:?}): is ready after {:?}", timeout, start.elapsed());
         return Ok(());
       }
 
       if let Some(timeout) = timeout {
         if start.elapsed() > timeout {
-          trace!("wait_for_ready_timeout({:?}): timeout exceeded", timeout);
+          trace!("Metriful::wait_for_ready_timeout({:?}): timeout exceeded", timeout);
           return Err(MetrifulError::ReadyTimeoutExceeded)
         } else {
           thread::sleep(Duration::from_millis(READY_POLL_INTERVAL));
@@ -534,6 +561,8 @@ impl Metriful {
       }
     }
 
+    trace!("Metriful::set_mode_timeout({:?}): done", mode);
+
     Ok(())
   }
 
@@ -576,6 +605,8 @@ impl Metriful {
     }
 
     self.wait_for_ready_timeout(timeout)?;
+    trace!("Metriful::set_mode_timeout(): finished, ready");
+
     Ok(self.read_status()?)
   }
 
@@ -602,7 +633,7 @@ impl Metriful {
     self.device.smbus_write_byte(0xE1)?;
     self.sleep_write();
 
-    trace!("execute_measurement()");
+    trace!("Metriful::execute_measurement(): done");
 
     Ok(())
   }
@@ -613,7 +644,7 @@ impl Metriful {
     self.ensure_ready()?;
 
     let ret = metric.read(&mut self.device);
-    trace!("read({:?}) -> {:?}", metric, &ret);
+    trace!("Metriful::read({:?}) -> {:?}", metric, &ret);
     ret
   }
 
@@ -658,9 +689,9 @@ impl Metriful {
   }
 
   pub fn read_status(&mut self) -> Result<DeviceStatus> {
-    trace!("read_status()");
     let status = DeviceStatus::read(&mut self.device)?;
     self.status = Some(status.clone());
+    trace!("Metriful::read_status() -> {:?}", &self.status);
 
     Ok(status)
   }
