@@ -46,18 +46,33 @@ lazy_static! {
   pub static ref METRIC_COMBINED_AIR_DATA: Metric<UnitCombinedAirData> = metric(0x10);
 
   /// Air quality index
+  ///
+  /// Note: only valid during cycle measurements; this limitation is not well
+  /// documented.
   pub static ref METRIC_AQI: Metric<UnitAirQualityIndex> = metric(0x25);
 
   /// Estimated CO2 concentration (based on gas sensor)
+  ///
+  /// Note: only valid during cycle measurements; this limitation is not well
+  /// documented.
   pub static ref METRIC_EST_CO2: Metric<UnitPartsPerMillion> = metric(0x26);
 
   /// "Equivalent breath" VOC concentration
+  ///
+  /// Note: only valid during cycle measurements; this limitation is not well
+  /// documented.
   pub static ref METRIC_VOC: Metric<UnitPartsPerMillion> = metric(0x27);
 
   /// AQI accuracy indicator
+  ///
+  /// Note: only valid during cycle measurements; this limitation is not well
+  /// documented.
   pub static ref METRIC_AQI_ACCURACY: Metric<UnitAQIAccuracy> = metric(0x28);
 
-  /// Combined read of air quality metrics (0x25-0x28, inclusive)
+  /// Combined read of air quality metrics (0x25-0x28, inclusive).
+  ///
+  /// Note: only valid during cycle measurements; this limitation is not well
+  /// documented.
   pub static ref METRIC_COMBINED_AIR_QUALITY_DATA: Metric<UnitCombinedAirQualityData> = metric(0x11);
 
   /// Illuminance in lux
