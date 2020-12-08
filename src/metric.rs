@@ -11,8 +11,13 @@ pub struct Metric<U> where U: MetrifulUnit {
 }
 
 impl<U> Metric<U> where U: MetrifulUnit {
-  pub fn read(&self, d: &mut LinuxI2CDevice) -> Result<U::Output> {
-    U::read(d, self.register)
+  pub fn read(&self, d: &mut LinuxI2CDevice) -> Result<UnitValue<U>> {
+    let value = U::read(d, self.register)?;
+
+    Ok(UnitValue {
+      unit: U::default(),
+      value
+    })
   }
 }
 
@@ -37,6 +42,9 @@ lazy_static! {
   /// Gas sensor resistance
   pub static ref METRIC_GAS_RESISTANCE: Metric<UnitResistance> = metric(0x24);
 
+  /// Combined read of air data metrics (0x21-0x24, inclusive)
+  pub static ref METRIC_COMBINED_AIR_DATA: Metric<UnitCombinedAirData> = metric(0x10);
+
   /// Air quality index
   pub static ref METRIC_AQI: Metric<UnitAirQualityIndex> = metric(0x25);
 
@@ -49,23 +57,32 @@ lazy_static! {
   /// AQI accuracy indicator
   pub static ref METRIC_AQI_ACCURACY: Metric<UnitAQIAccuracy> = metric(0x28);
 
+  /// Combined read of air quality metrics (0x25-0x28, inclusive)
+  pub static ref METRIC_COMBINED_AIR_QUALITY_DATA: Metric<UnitCombinedAirQualityData> = metric(0x11);
+
   /// Illuminance in lux
   pub static ref METRIC_ILLUMINANCE: Metric<UnitIlluminance> = metric(0x31);
 
   /// White light level
   pub static ref METRIC_WHITE_LIGHT_LEVEL: Metric<UnitWhiteLevel> = metric(0x32);
 
+  /// Combined read of light metrics (0x31, 0x32)
+  pub static ref METRIC_COMBINED_LIGHT_DATA: Metric<UnitCombinedLightData> = metric(0x12);
+
   /// A-weighted sound pressure level in dBa
-  pub static ref METRIC_WEIGHTED_SOUND_LEVEL: Metric<UnitAWeightedDecibels> = metric(0x41);
+  pub static ref METRIC_WEIGHTED_SOUND_LEVEL: Metric<UnitAWeightedSPL> = metric(0x41);
 
   /// Sound pressure level by frequency band
-  pub static ref METRIC_SOUND_LEVEL: Metric<UnitDecibelBands> = metric(0x42);
+  pub static ref METRIC_SOUND_LEVEL: Metric<UnitSPLFrequencyBands> = metric(0x42);
 
   /// Measured peak sound amplitude "since last read"
   pub static ref METRIC_PEAK_SOUND_AMPLITUDE: Metric<UnitMillipascal> = metric(0x43);
 
   /// Self assessment of sound measurement stability
   pub static ref METRIC_SOUND_MEASUREMENT_STABILITY: Metric<UnitSoundMeasurementStability> = metric(0x44);
+
+  /// Combined read of sound data (0x41-0x44)
+  pub static ref METRIC_COMBINED_SOUND_DATA: Metric<UnitCombinedSoundData> = metric(0x13);
 
   /// Particle sensor duty cycle
   pub static ref METRIC_PARTICLE_SENSOR_DUTY_CYCLE: Metric<UnitPercent> = metric(0x51);

@@ -9,6 +9,28 @@ use crate::error::*;
 use crate::metric::Metric;
 use crate::util::*;
 
+/// A combined unit and value, generally the result of a metric read.
+#[derive(Debug, Clone)]
+pub struct UnitValue<U> where U: MetrifulUnit {
+  pub unit: U,
+  pub value: U::Output
+}
+
+impl<U> UnitValue<U> where U: MetrifulUnit {
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self> {
+    Ok(UnitValue {
+      unit: U::default(),
+      value: U::from_bytes(bytes)?
+    })
+  }
+}
+
+impl<U> fmt::Display for UnitValue<U> where U: MetrifulUnit {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", U::format_value(&self.value))
+  }
+}
+
 #[derive(Debug)]
 struct UnitSymbol(Option<&'static str>);
 
@@ -44,7 +66,7 @@ pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone {
   /// The human-readable symbol for this unit
   fn symbol() -> Option<&'static str>;
 
-  fn format_value(value: Self::Output) -> String {
+  fn format_value(value: &Self::Output) -> String {
     if let Some(symbol) = Self::symbol() {
       format!("{} {}", value, symbol)
     } else {
@@ -83,7 +105,7 @@ impl MetrifulUnit for UnitDegreesCelsius {
   }
 
   fn symbol() -> Option<&'static str> {
-    "\u{2103}C".into()
+    "\u{2103}".into()
   }
 
   fn len() -> u8 {
@@ -167,6 +189,58 @@ impl MetrifulUnit for UnitResistance {
 
   fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     Ok(bytes.get_u32_le())
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct CombinedAirData {
+  pub temperature: UnitValue<UnitDegreesCelsius>,
+  pub pressure: UnitValue<UnitPascals>,
+  pub humidity: UnitValue<UnitRelativeHumidity>,
+  pub gas_sensor_resistance: UnitValue<UnitResistance>,
+}
+
+impl fmt::Display for CombinedAirData {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "temperature:           {}", self.temperature)?;
+    writeln!(f, "pressure:              {}", self.pressure)?;
+    writeln!(f, "humidity:              {}", self.humidity)?;
+    writeln!(f, "gas sensor resistance: {}", self.gas_sensor_resistance)?;
+
+    Ok(())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitCombinedAirData;
+
+impl MetrifulUnit for UnitCombinedAirData {
+  type Output = CombinedAirData;
+
+  fn name() -> &'static str {
+    "combined air data"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn len() -> u8 {
+    12
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    let temperature = UnitValue::<UnitDegreesCelsius>::from_bytes(bytes)?;
+    let pressure = UnitValue::<UnitPascals>::from_bytes(bytes)?;
+    let humidity = UnitValue::<UnitRelativeHumidity>::from_bytes(bytes)?;
+    let gas_sensor_resistance = UnitValue::<UnitResistance>::from_bytes(bytes)?;
+
+    Ok(CombinedAirData {
+      temperature,
+      pressure,
+      humidity,
+      gas_sensor_resistance,
+    })
   }
 }
 
@@ -276,49 +350,33 @@ impl MetrifulUnit for UnitAQIAccuracy {
   }
 }
 
-#[derive(Default, Debug, Copy, Clone)]
-pub struct UnitAWeightedDecibels;
-
-impl MetrifulUnit for UnitAWeightedDecibels {
-  type Output = f32;
-
-  fn name() -> &'static str {
-    "A-weighted decibels"
-  }
-
-  fn symbol() -> Option<&'static str> {
-    Some("dBa")
-  }
-
-  fn len() -> u8 {
-    2
-  }
-
-  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
-    let uint_part = bytes.get_u8();
-    let frac_part = bytes.get_u8();
-
-    Ok(read_f32_with_u8_denom(uint_part, frac_part))
-  }
+#[derive(Debug, Clone)]
+pub struct CombinedAirQualityData {
+  pub aqi: UnitValue<UnitAirQualityIndex>,
+  pub estimated_co2: UnitValue<UnitPartsPerMillion>,
+  pub estimated_voc: UnitValue<UnitPartsPerMillion>,
+  pub aqi_accuracy: UnitValue<UnitAQIAccuracy>,
 }
 
-#[derive(Debug)]
-pub struct DecibelBands([f32; 6]);
-
-impl fmt::Display for DecibelBands {
+impl fmt::Display for CombinedAirQualityData {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{:?}", self.0)
+    writeln!(f, "air quality index: {}", self.aqi)?;
+    writeln!(f, "estimated CO2:     {}", self.estimated_co2)?;
+    writeln!(f, "estimated VOCs:    {}", self.estimated_voc)?;
+    writeln!(f, "AQI accuracy:      {}", self.aqi_accuracy)?;
+
+    Ok(())
   }
 }
 
 #[derive(Default, Debug, Copy, Clone)]
-pub struct UnitDecibelBands;
+pub struct UnitCombinedAirQualityData;
 
-impl MetrifulUnit for UnitDecibelBands {
-  type Output = DecibelBands;
+impl MetrifulUnit for UnitCombinedAirQualityData {
+  type Output = CombinedAirQualityData;
 
   fn name() -> &'static str {
-    "decibel bands"
+    "combined air quality data"
   }
 
   fn symbol() -> Option<&'static str> {
@@ -326,22 +384,21 @@ impl MetrifulUnit for UnitDecibelBands {
   }
 
   fn len() -> u8 {
-    12
+    10
   }
 
   fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
-    let int_parts = &bytes[0..6];
-    let frac_parts = &bytes[6..12];
+    let aqi = UnitValue::<UnitAirQualityIndex>::from_bytes(bytes)?;
+    let estimated_co2 = UnitValue::<UnitPartsPerMillion>::from_bytes(bytes)?;
+    let estimated_voc = UnitValue::<UnitPartsPerMillion>::from_bytes(bytes)?;
+    let aqi_accuracy = UnitValue::<UnitAQIAccuracy>::from_bytes(bytes)?;
 
-    let bands: [f32; 6] = int_parts.iter()
-      .copied()
-      .zip(frac_parts.iter().copied())
-      .map(|(int_part, frac_part)| read_f32_with_u8_denom(int_part, frac_part))
-      .collect::<Vec<_>>()
-      .try_into()
-      .map_err(|_| MetrifulError::DecibelBandsError)?;
-
-    Ok(DecibelBands(bands))
+    Ok(CombinedAirQualityData {
+      aqi,
+      estimated_co2,
+      estimated_voc,
+      aqi_accuracy,
+    })
   }
 }
 
@@ -391,6 +448,119 @@ impl MetrifulUnit for UnitWhiteLevel {
 
   fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     Ok(bytes.get_u16_le())
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct CombinedLightData {
+  pub illuminance: UnitValue<UnitIlluminance>,
+  pub white_level: UnitValue<UnitWhiteLevel>,
+}
+
+impl fmt::Display for CombinedLightData {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "illuminance: {}", self.illuminance)?;
+    writeln!(f, "white level: {}", self.white_level)?;
+
+    Ok(())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitCombinedLightData;
+
+impl MetrifulUnit for UnitCombinedLightData {
+  type Output = CombinedLightData;
+
+  fn name() -> &'static str {
+    "combined light data"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn len() -> u8 {
+    5
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    let illuminance = UnitValue::<UnitIlluminance>::from_bytes(bytes)?;
+    let white_level = UnitValue::<UnitWhiteLevel>::from_bytes(bytes)?;
+
+    Ok(CombinedLightData {
+      illuminance,
+      white_level,
+    })
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitAWeightedSPL;
+
+impl MetrifulUnit for UnitAWeightedSPL {
+  type Output = f32;
+
+  fn name() -> &'static str {
+    "A-weighted sound pressure level"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    Some("dBa")
+  }
+
+  fn len() -> u8 {
+    2
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    let uint_part = bytes.get_u8();
+    let frac_part = bytes.get_u8();
+
+    Ok(read_f32_with_u8_denom(uint_part, frac_part))
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct SPLFrequencyBands([f32; 6]);
+
+impl fmt::Display for SPLFrequencyBands {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{:?}", self.0)
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitSPLFrequencyBands;
+
+impl MetrifulUnit for UnitSPLFrequencyBands {
+  type Output = SPLFrequencyBands;
+
+  fn name() -> &'static str {
+    "sound pressure level frequency bands"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn len() -> u8 {
+    12
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    let int_parts = &bytes[0..6];
+    let frac_parts = &bytes[6..12];
+
+    let bands: [f32; 6] = int_parts.iter()
+      .copied()
+      .zip(frac_parts.iter().copied())
+      .map(|(int_part, frac_part)| read_f32_with_u8_denom(int_part, frac_part))
+      .collect::<Vec<_>>()
+      .try_into()
+      .map_err(|_| MetrifulError::DecibelBandsError)?;
+
+    Ok(SPLFrequencyBands(bands))
   }
 }
 
@@ -461,6 +631,59 @@ impl MetrifulUnit for UnitSoundMeasurementStability {
       1 => Ok(SoundMeasurementStability::Stable),
       _ => Ok(SoundMeasurementStability::Unstable),
     }
+  }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct CombinedSoundData {
+  pub weighted_spl: UnitValue<UnitAWeightedSPL>,
+  pub spl_bands: UnitValue<UnitSPLFrequencyBands>,
+  pub peak_amplitude: UnitValue<UnitMillipascal>,
+  pub measurement_stability: UnitValue<UnitSoundMeasurementStability>,
+}
+
+impl fmt::Display for CombinedSoundData {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "a-weighted SPL:        {}", self.weighted_spl)?;
+    writeln!(f, "SPL frequency bands:   {}", self.spl_bands)?;
+    writeln!(f, "peak amplitude:        {}", self.peak_amplitude)?;
+    writeln!(f, "measurement stability: {}", self.measurement_stability)?;
+
+    Ok(())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitCombinedSoundData;
+
+impl MetrifulUnit for UnitCombinedSoundData {
+  type Output = CombinedSoundData;
+
+  fn name() -> &'static str {
+    "combined sound data"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn len() -> u8 {
+    18
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    let weighted_spl = UnitValue::<UnitAWeightedSPL>::from_bytes(bytes)?;
+    let spl_bands = UnitValue::<UnitSPLFrequencyBands>::from_bytes(bytes)?;
+    let peak_amplitude = UnitValue::<UnitMillipascal>::from_bytes(bytes)?;
+    let measurement_stability = UnitValue::<UnitSoundMeasurementStability>::from_bytes(bytes)?;
+
+    Ok(CombinedSoundData {
+      weighted_spl,
+      spl_bands,
+      peak_amplitude,
+      measurement_stability,
+    })
   }
 }
 

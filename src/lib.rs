@@ -282,7 +282,7 @@ impl<'a, 'b, U> Iterator for MetricReadIterator<'a, U>
 where
   U: MetrifulUnit
 {
-  type Item = Result<U::Output>;
+  type Item = Result<UnitValue<U>>;
 
   fn next(&mut self) -> Option<Self::Item> {
     if self.error {
@@ -640,11 +640,11 @@ impl Metriful {
 
   /// Reads the given metric from the device. Note that the device must
   /// currently be in a READY state or an error will be raised.
-  pub fn read<U: MetrifulUnit>(&mut self, metric: Metric<U>) -> Result<U::Output> {
+  pub fn read<U: MetrifulUnit>(&mut self, metric: Metric<U>) -> Result<UnitValue<U>> {
     self.ensure_ready()?;
 
     let ret = metric.read(&mut self.device);
-    trace!("Metriful::read({:?}) -> {:?}", metric, &ret);
+    trace!("Metriful::read({:x?}) -> {:?}", metric, &ret);
     ret
   }
 
