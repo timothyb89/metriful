@@ -3,11 +3,11 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::thread;
 
-use color_eyre::eyre::{Result, Error, Context, eyre};
+use color_eyre::eyre::{Result, Error, Context, WrapErr, eyre};
 use log::*;
 use structopt::StructOpt;
 
-use metriful::Metriful;
+use metriful::{CyclePeriod, Metriful, OperationalMode};
 use metriful::metric::*;
 
 fn try_from_hex_arg(s: &str) -> Result<u16> {
@@ -47,6 +47,11 @@ struct WatchAction {
 }
 
 #[derive(Debug, Clone, StructOpt)]
+struct CycleWatchAction {
+
+}
+
+#[derive(Debug, Clone, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 enum Action {
   /// Fetches sensor information
@@ -57,6 +62,15 @@ enum Action {
 
   /// Displays sensor events
   Watch(WatchAction),
+
+  /// Displays sensor events in cycle mode
+  CycleWatch(CycleWatchAction),
+}
+
+fn parse_duration_secs(s: &str) -> Result<Duration> {
+  Ok(Duration::from_secs(
+    s.parse().wrap_err_with(|| format!("invalid seconds value: {}", s))?
+  ))
 }
 
 #[derive(Debug, Clone, StructOpt)]
@@ -77,17 +91,21 @@ struct Options {
   #[structopt(long, default_value = "11", env = "GPIO_READY", global = true)]
   gpio_ready: u64,
 
+  /// Global timeout for any individual sensor command in seconds.
+  #[structopt(long, parse(try_from_str = parse_duration_secs), global = true)]
+  timeout: Option<Duration>,
+
   #[structopt(subcommand)]
   action: Action
 }
 
-fn show_info(mut metriful: Metriful) -> Result<()> {
+fn show_info(_opts: &Options, mut metriful: Metriful) -> Result<()> {
   println!("{:#?}", metriful.read_status());
 
   Ok(())
 }
 
-fn reset(mut metriful: Metriful) -> Result<()> {
+fn reset(_opts: &Options, mut metriful: Metriful) -> Result<()> {
   metriful.reset()?;
   info!("reset command sent, waiting for ready...");
 
@@ -99,7 +117,9 @@ fn reset(mut metriful: Metriful) -> Result<()> {
   Ok(())
 }
 
-fn watch(action: WatchAction, mut metriful: Metriful) -> Result<()> {
+fn watch(opts: &Options, action: &WatchAction, mut metriful: Metriful) -> Result<()> {
+  metriful.set_mode_timeout(OperationalMode::Standby, opts.timeout)?;
+
   loop {
     metriful.execute_measurement()?;
     metriful.wait_for_ready()?;
@@ -107,11 +127,6 @@ fn watch(action: WatchAction, mut metriful: Metriful) -> Result<()> {
     println!(
       "air data:\n{}",
       textwrap::indent(&metriful.read(*METRIC_COMBINED_AIR_DATA)?.to_string(), "  ")
-    );
-
-    println!(
-      "air quality data:\n{}",
-      textwrap::indent(&metriful.read(*METRIC_COMBINED_AIR_QUALITY_DATA)?.to_string(), "  ")
     );
 
     println!(
@@ -126,6 +141,26 @@ fn watch(action: WatchAction, mut metriful: Metriful) -> Result<()> {
 
     println!("---");
     thread::sleep(Duration::from_millis(1000));
+  }
+}
+
+fn cycle_watch(opts: &Options, action: &CycleWatchAction, mut metriful: Metriful) -> Result<()> {
+  loop {
+    let iter = metriful.cycle_read_iter_timeout(
+      *METRIC_COMBINED_AIR_QUALITY_DATA,
+      CyclePeriod::Period0,
+      opts.timeout
+    );
+    for value in iter {
+      let value = value?;
+
+      println!(
+        "air quality data:\n{}",
+        textwrap::indent(&value.to_string(), "  ")
+      );
+
+      println!("---");
+    }
   }
 }
 
@@ -149,10 +184,11 @@ fn main() -> Result<()> {
 
   info!("metriful sensor is ready");
 
-  match opts.action {
-    Action::Info => show_info(metriful)?,
-    Action::Reset => reset(metriful)?,
-    Action::Watch(action) => watch(action, metriful)?
+  match &opts.action {
+    Action::Info => show_info(&opts, metriful)?,
+    Action::Reset => reset(&opts, metriful)?,
+    Action::Watch(action) => watch(&opts, &action, metriful)?,
+    Action::CycleWatch(action) => cycle_watch(&opts, &action, metriful)?,
   };
 
   Ok(())

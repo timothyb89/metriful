@@ -29,7 +29,7 @@ pub enum MetrifulError {
   #[error(display = "sensor is not in ready state")]
   NotReady,
 
-  #[error(display = "command requires mode {:?} but current mode is {:?}", current, required)]
+  #[error(display = "command requires mode {:?} but current mode is {:?}", required, current)]
   InvalidMode {
     current: OperationalMode,
     required: OperationalMode,

@@ -269,6 +269,23 @@ impl fmt::Debug for Metriful {
   }
 }
 
+/// An iterator for repeatedly collecting on-demand measurements.
+///
+/// Unless otherwise limited (e.g. `.take(n)`) this iterator will return results
+/// forever. If an error occurs, it is returned as the next result and the
+/// iterator terminates.
+///
+/// Each read takes approximately `interval`; intervals should be at least 2
+/// seconds to ensure valid results, though smaller values may still be used.
+/// Note that the device takes roughly 550ms to collect metrics, during which
+/// the thread is blocked, effectively ensuring a minimum interval of 550ms.
+/// The blocking time is automatically adjusted to ensure a consistent read
+/// interval, though if more than `interval` time passes between subsequent
+/// reads the next result will be fetched immediately and will only block until
+/// the device becomes ready again in approximately 550ms.
+///
+/// Additionally, note that these on-demand measurements do not include air
+/// quality data; these are only valid in cycle read mode.
 pub struct MetricReadIterator<'a, U> where U: MetrifulUnit {
   device: &'a mut Metriful,
   metric: Metric<U>,
@@ -278,7 +295,7 @@ pub struct MetricReadIterator<'a, U> where U: MetrifulUnit {
   error: bool,
 }
 
-impl<'a, 'b, U> Iterator for MetricReadIterator<'a, U>
+impl<'a, U> Iterator for MetricReadIterator<'a, U>
 where
   U: MetrifulUnit
 {
@@ -318,6 +335,76 @@ where
     };
 
     ret
+  }
+}
+
+/// An iterator that periodically returns results in cycle mode.
+///
+/// If the device is not in the proper cycle mode on the first call to
+/// `.next()`, a mode change is executed per `Metriful::set_mode_timeout()`.
+/// This may result up to 2 mode changes if the device is currently in a
+/// different cycle mode, and may cause some delay (between ~0.6 and ~2.6
+/// seconds) before the first read completes.
+///
+/// Unlike `MetricReadIterator`, this iterator makes no attempt to ensure a
+/// consistent read interval and is entirely dependent on the sensor and GPIO
+/// values. In particular, the first read should be expected to return
+/// relatively quickly (2.6s in the 100s/300s interval cases), however
+/// subsequent reads should be expected to take the full interval of time.
+///
+/// Note that subsequent calls to `.next()` must be made before the current
+/// cycle ends or a measurement will be skipped. In the worst case, this means
+/// callers have up to 2.95s (per the datasheet) to process a result and call
+/// `.next()` again.
+pub struct CycleReadIterator<'a, U> where U: MetrifulUnit {
+  device: &'a mut Metriful,
+  cycle_period: CyclePeriod,
+  metric: Metric<U>,
+  timeout: Option<Duration>,
+
+  first: bool,
+  error: bool,
+}
+
+impl<'a, U> Iterator for CycleReadIterator<'a, U> where U: MetrifulUnit {
+  type Item = Result<UnitValue<U>>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if self.error {
+      return None;
+    }
+
+    if self.first {
+      match self.device.set_mode_timeout(OperationalMode::Cycle(self.cycle_period), self.timeout) {
+        Ok(_) => {
+          self.first = false;
+
+          match self.device.read(self.metric) {
+            Ok(res) => Some(Ok(res)),
+            Err(e) => {
+              self.error = true;
+              Some(Err(e))
+            }
+          }
+        },
+        Err(e) => {
+          self.error = true;
+          return Some(Err(e));
+        }
+      }
+    } else {
+      let res = self.device.wait_for_not_ready_timeout(self.timeout)
+        .and_then(|()| self.device.wait_for_ready_timeout(self.timeout))
+        .and_then(|()| self.device.read(self.metric));
+
+      match res {
+        Ok(result) => Some(Ok(result)),
+        Err(e) => {
+          self.error = true;
+          Some(Err(e))
+        }
+      }
+    }
   }
 }
 
@@ -462,6 +549,28 @@ impl Metriful {
     self.wait_for_ready_timeout(None)
   }
 
+  /// The inverse of `wait_for_ready_timeout`, this waits until the device is
+  /// explicitly not ready, useful for e.g. waiting for a new cycle period.
+  pub fn wait_for_not_ready_timeout(&self, timeout: Option<Duration>) -> Result<()> {
+    let start = Instant::now();
+
+    loop {
+      if !self.is_ready()? {
+        trace!("Metriful::wait_for_not_ready_timeout({:?}): is not ready after {:?}", timeout, start.elapsed());
+        return Ok(());
+      }
+
+      if let Some(timeout) = timeout {
+        if start.elapsed() > timeout {
+          trace!("Metriful::wait_for_not_ready_timeout({:?}): timeout exceeded", timeout);
+          return Err(MetrifulError::ReadyTimeoutExceeded)
+        } else {
+          thread::sleep(Duration::from_millis(READY_POLL_INTERVAL));
+        }
+      }
+    }
+  }
+
   /// Waits for `Metriful::is_ready()` to become true and executes the given
   /// function. If the timeout is exceeded, an error is returned.
   pub fn execute_when_ready_timeout<T>(
@@ -558,6 +667,9 @@ impl Metriful {
 
         // enter cycle mode
         self.device.smbus_write_byte(0xE4)?;
+
+        // per docs, it takes 11ms to enter cycle mode
+        thread::sleep(Duration::from_millis(11));
       }
     }
 
@@ -685,6 +797,25 @@ impl Metriful {
       last_instant: Instant::now(),
       metric,
       interval,
+    }
+  }
+
+  pub fn cycle_read_iter_timeout<'a, U>(
+    &'a mut self,
+    metric: Metric<U>,
+    cycle_period: CyclePeriod,
+    timeout: Option<Duration>,
+  ) -> CycleReadIterator<U>
+  where
+    U: MetrifulUnit
+  {
+    CycleReadIterator {
+      device: self,
+      first: true,
+      error: false,
+      metric,
+      cycle_period,
+      timeout,
     }
   }
 

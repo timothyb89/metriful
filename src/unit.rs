@@ -334,11 +334,11 @@ impl MetrifulUnit for UnitAQIAccuracy {
   type Output = AQIAccuracy;
 
   fn name() -> &'static str {
-    "parts per million"
+    "AQI accuracy"
   }
 
   fn symbol() -> Option<&'static str> {
-    Some("ppm")
+    None
   }
 
   fn len() -> u8 {
