@@ -2,25 +2,30 @@ use std::convert::TryInto;
 use std::fmt;
 
 use bytes::{Bytes, Buf};
+use chrono::{DateTime, SecondsFormat, Utc};
 use i2cdev::core::I2CDevice;
 use i2cdev::linux::LinuxI2CDevice;
 
+#[cfg(feature = "serde")] use serde::{Serialize, ser::{Serializer, SerializeStruct}};
+
 use crate::error::*;
-use crate::metric::Metric;
+use crate::metric::*;
 use crate::util::*;
 
 /// A combined unit and value, generally the result of a metric read.
 #[derive(Debug, Clone)]
 pub struct UnitValue<U> where U: MetrifulUnit {
   pub unit: U,
-  pub value: U::Output
+  pub value: U::Output,
+  pub time: DateTime<Utc>,
 }
 
 impl<U> UnitValue<U> where U: MetrifulUnit {
   fn from_bytes(bytes: &mut Bytes) -> Result<Self> {
     Ok(UnitValue {
       unit: U::default(),
-      value: U::from_bytes(bytes)?
+      value: U::from_bytes(bytes)?,
+      time: Utc::now(),
     })
   }
 }
@@ -28,6 +33,22 @@ impl<U> UnitValue<U> where U: MetrifulUnit {
 impl<U> fmt::Display for UnitValue<U> where U: MetrifulUnit {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}", U::format_value(&self.value))
+  }
+}
+
+#[cfg(feature = "serde")]
+impl<U> Serialize for UnitValue<U> where U: MetrifulUnit {
+  fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+  where
+      S: Serializer
+  {
+    let mut state = serializer.serialize_struct("UnitValue", 5)?;
+    state.serialize_field("timestamp", &self.time.to_rfc3339_opts(SecondsFormat::Secs, true))?;
+    state.serialize_field("unit_name", U::name())?;
+    state.serialize_field("unit_symbol", &U::symbol())?;
+    state.serialize_field("value", &self.value)?;
+    state.serialize_field("formatted_value", &U::format_value(&self.value))?;
+    state.end()
   }
 }
 
@@ -58,7 +79,8 @@ impl From<Option<&'static str>> for UnitSymbol {
 
 pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone {
   /// This unit's native datatype.
-  type Output: fmt::Display + fmt::Debug;
+  #[cfg(feature = "serde")] type Output: fmt::Display + fmt::Debug + Serialize;
+  #[cfg(not(feature = "serde"))] type Output: fmt::Display + fmt::Debug;
 
   /// The human-readable name of the unit
   fn name() -> &'static str;
@@ -193,6 +215,7 @@ impl MetrifulUnit for UnitResistance {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct CombinedAirData {
   pub temperature: UnitValue<UnitDegreesCelsius>,
   pub pressure: UnitValue<UnitPascals>,
@@ -297,6 +320,7 @@ impl MetrifulUnit for UnitPartsPerMillion {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum AQIAccuracy {
   Invalid,
   Low,
@@ -351,6 +375,7 @@ impl MetrifulUnit for UnitAQIAccuracy {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct CombinedAirQualityData {
   pub aqi: UnitValue<UnitAirQualityIndex>,
   pub estimated_co2: UnitValue<UnitPartsPerMillion>,
@@ -452,6 +477,7 @@ impl MetrifulUnit for UnitWhiteLevel {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct CombinedLightData {
   pub illuminance: UnitValue<UnitIlluminance>,
   pub white_level: UnitValue<UnitWhiteLevel>,
@@ -522,6 +548,7 @@ impl MetrifulUnit for UnitAWeightedSPL {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SPLFrequencyBands([f32; 6]);
 
 impl fmt::Display for SPLFrequencyBands {
@@ -591,6 +618,7 @@ impl MetrifulUnit for UnitMillipascal {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum SoundMeasurementStability {
   /// Microphone initialization has finished
   Stable,
@@ -636,6 +664,7 @@ impl MetrifulUnit for UnitSoundMeasurementStability {
 
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct CombinedSoundData {
   pub weighted_spl: UnitValue<UnitAWeightedSPL>,
   pub spl_bands: UnitValue<UnitSPLFrequencyBands>,
@@ -718,6 +747,7 @@ impl MetrifulUnit for UnitPercent {
 ///
 /// Both values are always set and should be approximately equal.
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct RawParticleConcentration {
   /// 16-bit integer with two-digit fractional part; micrograms per cubic meter
   pub sds011_value: f32,
@@ -782,8 +812,9 @@ impl MetrifulUnit for UnitRawParticleConcentration {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum ParticleDataValidity {
-  /// Particle sensor is still initializing
+  /// Particle sensor is still initializing (or is not enabled)
   Initializing,
 
   /// Particle sensor data is "likely to have settled"
@@ -829,5 +860,138 @@ impl MetrifulUnit for UnitParticleDataValidity {
 
   fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
     Ok(ParticleDataValidity::from_byte(bytes.get_u8())?)
+  }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct CombinedParticleData {
+  pub duty_cycle: UnitValue<UnitPercent>,
+  pub concentration: UnitValue<UnitRawParticleConcentration>,
+  pub validity: UnitValue<UnitParticleDataValidity>,
+}
+
+impl fmt::Display for CombinedParticleData {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "duty cycle:    {}", self.duty_cycle)?;
+    writeln!(f, "concentration: {}", self.concentration)?;
+    writeln!(f, "validity:      {}", self.validity)?;
+
+    Ok(())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitCombinedParticleData;
+
+impl MetrifulUnit for UnitCombinedParticleData {
+  type Output = CombinedParticleData;
+
+  fn name() -> &'static str {
+    "combined particle data"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn len() -> u8 {
+    6
+  }
+
+  fn from_bytes(bytes: &mut Bytes) -> Result<Self::Output> {
+    let duty_cycle = UnitValue::<UnitPercent>::from_bytes(bytes)?;
+    let concentration = UnitValue::<UnitRawParticleConcentration>::from_bytes(bytes)?;
+    let validity = UnitValue::<UnitParticleDataValidity>::from_bytes(bytes)?;
+
+    Ok(CombinedParticleData {
+      duty_cycle,
+      concentration,
+      validity,
+    })
+  }
+}
+
+/// All sensor data, read at once.
+///
+/// Note that air quality and particle data have additional requirements and may
+/// be invalid; they will be marked as such.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
+pub struct CombinedData {
+  pub air: UnitValue<UnitCombinedAirData>,
+  pub air_quality: UnitValue<UnitCombinedAirQualityData>,
+  pub light: UnitValue<UnitCombinedLightData>,
+  pub sound: UnitValue<UnitCombinedSoundData>,
+  pub particle: UnitValue<UnitCombinedParticleData>,
+}
+
+impl fmt::Display for CombinedData {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(
+      f, "air data:\n{}",
+      textwrap::indent(&self.air.value.to_string(), "  ")
+    )?;
+
+    writeln!(
+      f, "air quality data:\n{}",
+      textwrap::indent(&self.air_quality.value.to_string(), "  ")
+    )?;
+
+    writeln!(
+      f, "light data:\n{}",
+      textwrap::indent(&self.light.value.to_string(), "  ")
+    )?;
+
+    writeln!(
+      f, "sound data:\n{}",
+      textwrap::indent(&self.sound.value.to_string(), "  ")
+    )?;
+
+    writeln!(
+      f, "particle data:\n{}",
+      textwrap::indent(&self.particle.value.to_string(), "  ")
+    )?;
+
+    Ok(())
+  }
+}
+
+#[derive(Default, Debug, Copy, Clone)]
+pub struct UnitCombinedData;
+
+impl MetrifulUnit for UnitCombinedData {
+  type Output = CombinedData;
+
+  fn name() -> &'static str {
+    "all combined data"
+  }
+
+  fn symbol() -> Option<&'static str> {
+    None
+  }
+
+  fn len() -> u8 {
+    0
+  }
+
+  fn from_bytes(_bytes: &mut Bytes) -> Result<Self::Output> {
+    Err(MetrifulError::InvalidCombinedDataFromBytes)
+  }
+
+  fn read(device: &mut LinuxI2CDevice, _register: u8) -> Result<Self::Output> {
+    let air = METRIC_COMBINED_AIR_DATA.read(device)?;
+    let air_quality = METRIC_COMBINED_AIR_QUALITY_DATA.read(device)?;
+    let light = METRIC_COMBINED_LIGHT_DATA.read(device)?;
+    let sound = METRIC_COMBINED_SOUND_DATA.read(device)?;
+    let particle = METRIC_COMBINED_PARTICLE_DATA.read(device)?;
+
+    Ok(CombinedData {
+      air,
+      air_quality,
+      light,
+      sound,
+      particle,
+    })
   }
 }

@@ -18,9 +18,22 @@ fn try_from_hex_arg(s: &str) -> Result<u16> {
   }
 }
 
+fn try_watch_interval_from_str(s: &str) -> Result<Duration> {
+  let seconds: u64 = s.strip_suffix("s")
+    .unwrap_or(s)
+    .parse()
+    .with_context(|| format!("invalid duration in seconds: {:?}", s))?;
+
+  if seconds == 0 {
+    return Err(eyre!("interval must be at least 1 second"));
+  }
+
+  Ok(Duration::from_secs(seconds))
+}
+
 #[derive(Debug, Copy, Clone)]
 enum OutputMode {
-  None,
+  Plain,
   JSON,
   CSV
 }
@@ -29,33 +42,54 @@ impl FromStr for OutputMode {
   type Err = Error;
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     match s.to_ascii_lowercase().as_str() {
-      "" | "none" => Ok(OutputMode::None),
+      "plain" => Ok(OutputMode::Plain),
       "json" => Ok(OutputMode::JSON),
       "csv" => Ok(OutputMode::CSV),
-      s => Err(eyre!("invalid output mode '{}', expected one of: none, json, csv", s))
+      s => Err(eyre!("invalid output mode '{}', expected one of: plain, json, csv", s))
     }
   }
+}
+
+#[derive(Debug, Clone, StructOpt)]
+struct InfoAction {
+  /// Data output format, one of: plain, json, csv
+  #[structopt(long, short, default_value = "plain")]
+  output: OutputMode,
 }
 
 #[derive(Debug, Clone, StructOpt)]
 struct WatchAction {
   /// If set, writes incoming queries to stdout in the given format. Note that
   /// log messages are always written to stderr. JSON messages are one JSON
-  /// object per line. One of: none, json, csv
-  #[structopt(long, short, default_value = "none")]
-  output_mode: OutputMode
+  /// object per line. One of: plain, json, csv
+  #[structopt(long, short, default_value = "plain")]
+  output: OutputMode,
+
+  /// Time interval between measurements in seconds
+  #[structopt(
+    long, short,
+    default_value = "2",
+    parse(try_from_str = try_watch_interval_from_str)
+  )]
+  interval: Duration,
 }
 
 #[derive(Debug, Clone, StructOpt)]
 struct CycleWatchAction {
+  /// Data output format, one of: plain, json, csv
+  #[structopt(long, short, default_value = "plain")]
+  output: OutputMode,
 
+  /// Cycle period, one of: 0 (3s), 1 (100s), 2 (300s)
+  #[structopt(long, short, default_value = "3s")]
+  interval: CyclePeriod
 }
 
 #[derive(Debug, Clone, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 enum Action {
   /// Fetches sensor information
-  Info,
+  Info(InfoAction),
 
   /// Resets the sensor
   Reset,
@@ -99,8 +133,14 @@ struct Options {
   action: Action
 }
 
-fn show_info(_opts: &Options, mut metriful: Metriful) -> Result<()> {
-  println!("{:#?}", metriful.read_status());
+fn show_info(_opts: &Options, action: &InfoAction, mut metriful: Metriful) -> Result<()> {
+  let status = metriful.read_status()?;
+
+  match action.output {
+    OutputMode::Plain => println!("{:#?}", status),
+    OutputMode::JSON => println!("{}", serde_json::to_string(&status)?),
+    _ => return Err(eyre!("csv info not implemented")),
+  }
 
   Ok(())
 }
@@ -124,42 +164,55 @@ fn watch(opts: &Options, action: &WatchAction, mut metriful: Metriful) -> Result
     metriful.execute_measurement()?;
     metriful.wait_for_ready()?;
 
-    println!(
-      "air data:\n{}",
-      textwrap::indent(&metriful.read(*METRIC_COMBINED_AIR_DATA)?.to_string(), "  ")
-    );
+    let result = metriful.read(*METRIC_COMBINED_ALL)?;
 
-    println!(
-      "light data:\n{}",
-      textwrap::indent(&metriful.read(*METRIC_COMBINED_LIGHT_DATA)?.to_string(), "  ")
-    );
+    match action.output {
+      OutputMode::Plain => {
+        println!(
+          "air data:\n{}",
+          textwrap::indent(&result.value.air.to_string(), "  ")
+        );
 
-    println!(
-      "sound data:\n{}",
-      textwrap::indent(&metriful.read(*METRIC_COMBINED_SOUND_DATA)?.to_string(), "  ")
-    );
+        println!(
+          "light data:\n{}",
+          textwrap::indent(&result.value.light.to_string(), "  ")
+        );
 
-    println!("---");
-    thread::sleep(Duration::from_millis(1000));
+        println!(
+          "sound data:\n{}",
+          textwrap::indent(&metriful.read(*METRIC_COMBINED_SOUND_DATA)?.to_string(), "  ")
+        );
+
+        println!("---");
+      },
+      OutputMode::JSON => println!("{}", serde_json::to_string(&result)?),
+      OutputMode::CSV => return Err(eyre!("csv output not implemented")),
+    }
+
+    thread::sleep(action.interval);
   }
 }
 
 fn cycle_watch(opts: &Options, action: &CycleWatchAction, mut metriful: Metriful) -> Result<()> {
   loop {
     let iter = metriful.cycle_read_iter_timeout(
-      *METRIC_COMBINED_AIR_QUALITY_DATA,
-      CyclePeriod::Period0,
+      *METRIC_COMBINED_ALL,
+      action.interval,
       opts.timeout
     );
     for value in iter {
       let value = value?;
 
-      println!(
-        "air quality data:\n{}",
-        textwrap::indent(&value.to_string(), "  ")
-      );
-
-      println!("---");
+      match &action.output {
+        OutputMode::Plain => {
+          println!("{}", value);
+          println!("---");
+        },
+        OutputMode::JSON => {
+          println!("{}", serde_json::to_string(&value)?)
+        }
+        OutputMode::CSV => return Err(eyre!("csv output not implemented")),
+      }
     }
   }
 }
@@ -185,7 +238,7 @@ fn main() -> Result<()> {
   info!("metriful sensor is ready");
 
   match &opts.action {
-    Action::Info => show_info(&opts, metriful)?,
+    Action::Info(action) => show_info(&opts, &action, metriful)?,
     Action::Reset => reset(&opts, metriful)?,
     Action::Watch(action) => watch(&opts, &action, metriful)?,
     Action::CycleWatch(action) => cycle_watch(&opts, &action, metriful)?,

@@ -17,6 +17,9 @@ pub enum MetrifulError {
   #[error(display = "invalid cycle period mode: {:x}", _0)]
   InvalidCyclePeriod(u8),
 
+  #[error(display = "invalid cycle period: {}", _0)]
+  InvalidCyclePeriodString(String),
+
   #[error(display = "invalid operational mode: {:x}", _0)]
   InvalidOperationalMode(u8),
 
@@ -42,7 +45,10 @@ pub enum MetrifulError {
   InvalidParticleDataValidity(u8),
 
   #[error(display = "invalid decibel bands")]
-  DecibelBandsError
+  DecibelBandsError,
+
+  #[error(display = "combined data may not be constructed from bytes")]
+  InvalidCombinedDataFromBytes
 }
 
 pub type Result<T> = std::result::Result<T, MetrifulError>;

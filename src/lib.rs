@@ -1,10 +1,12 @@
-use std::{path::Path, fmt, thread, time::{Duration, Instant}};
+use std::{fmt, path::Path, str::FromStr, thread, time::{Duration, Instant}};
 
 use bytes::{Bytes, Buf};
 use i2cdev::core::*;
 use i2cdev::linux::LinuxI2CDevice;
 use log::{trace, debug, info};
 use sysfs_gpio::{Direction, Pin};
+
+#[cfg(feature = "serde")] use serde::{Serialize, ser::{Serializer, SerializeStruct}};
 
 pub mod error;
 pub mod metric;
@@ -32,6 +34,31 @@ pub enum CyclePeriod {
 
   /// Period `2`, i.e. 300 second cycles
   Period2,
+}
+
+impl FromStr for CyclePeriod {
+  type Err = MetrifulError;
+
+  fn from_str(s: &str) -> Result<Self> {
+    match s {
+      "0" | "3s" => Ok(CyclePeriod::Period0),
+      "1" | "100s" => Ok(CyclePeriod::Period1),
+      "2" | "300s" => Ok(CyclePeriod::Period2),
+      other => Err(MetrifulError::InvalidCyclePeriodString(other.to_string()))
+    }
+  }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for CyclePeriod {
+  fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+  where
+      S: Serializer
+  {
+    let mut state = serializer.serialize_struct("CyclePeriod", 1)?;
+    state.serialize_field("period", &format!("{:?}", self.to_duration()))?;
+    state.end()
+  }
 }
 
 impl fmt::Debug for CyclePeriod {
@@ -75,6 +102,7 @@ impl CyclePeriod {
 
 /// Device operational mode.
 #[derive(Debug, Copy, Clone, PartialEq, Ord, PartialOrd, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase", tag = "mode"))]
 pub enum OperationalMode {
   Cycle(CyclePeriod),
   Standby
@@ -102,6 +130,7 @@ impl OperationalMode {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "kebab-case"))]
 pub enum ParticleSensorMode {
   Disabled,
   EnabledPPD42,
@@ -128,18 +157,21 @@ impl ParticleSensorMode {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase", tag = "status"))]
 pub enum InterruptStatus<T> {
   Disabled,
   Enabled(T),
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum InterruptMode {
   Latch,
   Comparator
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub enum InterruptPolarity {
   /// Interrupt triggers when n > threshold
   Positive,
@@ -149,6 +181,7 @@ pub enum InterruptPolarity {
 }
 
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SoundInterrupt {
   mode: InterruptMode,
 
@@ -176,6 +209,7 @@ impl SoundInterrupt {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct LightInterrupt {
   mode: InterruptMode,
 
@@ -213,6 +247,7 @@ impl LightInterrupt {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize), serde(rename_all = "lowercase"))]
 pub struct DeviceStatus {
   particle_sensor: ParticleSensorMode,
   light_int: InterruptStatus<LightInterrupt>,

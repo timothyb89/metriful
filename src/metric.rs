@@ -1,3 +1,4 @@
+use chrono::Utc;
 use i2cdev::linux::LinuxI2CDevice;
 use lazy_static::lazy_static;
 
@@ -16,6 +17,7 @@ impl<U> Metric<U> where U: MetrifulUnit {
 
     Ok(UnitValue {
       unit: U::default(),
+      time: Utc::now(),
       value
     })
   }
@@ -107,4 +109,10 @@ lazy_static! {
 
   /// Self assessment of state of particle sensor, if attached
   pub static ref METRIC_PARTICLE_DATA_VALID: Metric<UnitParticleDataValidity> = metric(0x53);
+
+  /// Combined read of all particle data in registers 0x51-0x53.
+  pub static ref METRIC_COMBINED_PARTICLE_DATA: Metric<UnitCombinedParticleData> = metric(0x14);
+
+  /// Pseudo-metric for a combined read of all METRIC_COMBINED_* fields.
+  pub static ref METRIC_COMBINED_ALL: Metric<UnitCombinedData> = metric(0x0);
 }
