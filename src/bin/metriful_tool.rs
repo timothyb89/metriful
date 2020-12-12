@@ -180,7 +180,12 @@ fn watch(opts: &Options, action: &WatchAction, mut metriful: Metriful) -> Result
 
         println!(
           "sound data:\n{}",
-          textwrap::indent(&metriful.read(*METRIC_COMBINED_SOUND_DATA)?.to_string(), "  ")
+          textwrap::indent(&result.value.sound.to_string(), "  ")
+        );
+
+        println!(
+          "particle data: \n{}",
+          textwrap::indent(&result.value.particle.to_string(), "  ")
         );
 
         println!("---");
