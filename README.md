@@ -147,6 +147,15 @@ Refer to [Metriful's guide][guide] for wiring instructions. Note that the line
 `dtparam=i2c_arm=on` must be uncommented in `/boot/config.txt`; the
 `raspi-config` utility can do this for you.
 
+In case of GPIO conflicts, the READY pin can be relocated to any free GPIO pin;
+the library (and `metriful-tool`) allow arbitrary pin numbers rather than just
+the default.
+
+Similarly, in case of a conflict with the default I2C address (`0x71`), the
+sensor has a solder bridge which may be closed to use an alternative address
+(`0x70`). Both the library and `metriful-tool` support this; refer to the
+datasheet for more information.
+
 [guide]: https://github.com/metriful/sensor#use-with-raspberry-pi
 
 ## Q&A

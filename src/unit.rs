@@ -2,10 +2,11 @@ use std::convert::TryInto;
 use std::fmt;
 
 use bytes::{Bytes, Buf};
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use i2cdev::core::I2CDevice;
 use i2cdev::linux::LinuxI2CDevice;
 
+#[cfg(feature = "serde")] use chrono::SecondsFormat;
 #[cfg(feature = "serde")] use serde::{Serialize, ser::{Serializer, SerializeStruct}};
 
 use crate::error::*;

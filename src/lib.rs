@@ -13,29 +13,13 @@ pub mod util;
 
 use error::*;
 use metric::*;
-use status::*;
+pub use status::*;
 use unit::*;
 
 /// Metriful i2c address. Note: 0x70 if solder bridge is closed.
 pub const METRIFUL_ADDRESS: u16 = 0x71;
 
 pub const READY_POLL_INTERVAL: u64 = 10;
-
-pub struct Metriful {
-  ready_pin: Pin,
-  device: LinuxI2CDevice,
-
-  status: Option<DeviceStatus>,
-}
-
-impl fmt::Debug for Metriful {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_struct("Metriful")
-      .field("ready_pin", &self.ready_pin)
-      .field("status", &self.status)
-      .finish()
-  }
-}
 
 /// An iterator for repeatedly collecting on-demand measurements.
 ///
@@ -176,6 +160,23 @@ impl<'a, U> Iterator for CycleReadIterator<'a, U> where U: MetrifulUnit {
   }
 }
 
+/// A Metriful MS430 sensor connected via I2C with a "ready" GPIO pin.
+pub struct Metriful {
+  ready_pin: Pin,
+  device: LinuxI2CDevice,
+
+  status: Option<DeviceStatus>,
+}
+
+impl fmt::Debug for Metriful {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("Metriful")
+      .field("ready_pin", &self.ready_pin)
+      .field("status", &self.status)
+      .finish()
+  }
+}
+
 impl Metriful {
   /// Creates a new Metriful given a preexisting GPIO `Pin` and
   /// `LinuxI2CDevice`. This ensures the device is ready and fetches the current
@@ -210,13 +211,13 @@ impl Metriful {
   /// before use; call `Metriful::reset()` to do so.
   pub fn try_new_timeout(
     gpio_ready: u64,
-    i2c_device: &Path,
+    i2c_device: impl AsRef<Path>,
     i2c_address: u16,
     timeout: Option<Duration>
   ) -> Result<Metriful> {
     trace!(
       "Metriful::try_new_timeout({}, {}, {:x}, {:?})",
-      gpio_ready, i2c_device.display(), i2c_address, timeout
+      gpio_ready, i2c_device.as_ref().display(), i2c_address, timeout
     );
 
     let ready_pin = Pin::new(gpio_ready);
@@ -246,7 +247,7 @@ impl Metriful {
   /// before use; call `Metriful::reset()` to do so.
   pub fn try_new(
     gpio_ready: u64,
-    i2c_device: &Path,
+    i2c_device: impl AsRef<Path>,
     i2c_address: u16
   ) -> Result<Metriful> {
     Metriful::try_new_timeout(gpio_ready, i2c_device, i2c_address, None)
@@ -520,6 +521,18 @@ impl Metriful {
 
   /// Reads the given metric from the device. Note that the device must
   /// currently be in a READY state or an error will be raised.
+  ///
+  /// # Example
+  /// ```no_run
+  /// use metriful::{Metriful, metric::*};
+  ///
+  /// # fn main() -> metriful::error::Result<()> {
+  /// let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+  ///
+  /// println!("{}", metriful.read(*METRIC_COMBINED_ALL)?);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn read<U: MetrifulUnit>(&mut self, metric: Metric<U>) -> Result<UnitValue<U>> {
     self.ensure_ready()?;
 
@@ -528,6 +541,40 @@ impl Metriful {
     ret
   }
 
+  /// Returns an iterator that reads the given metric repeatedly at a given
+  /// interval. Note that the thread will block for `interval` duration on each
+  /// read. It reads indefinitely or until an error occurs.
+  ///
+  /// Note that this iterator performs "on-demand" measurements and as such
+  /// certain metrics will not be available, particularly air quality data.
+  /// Consider using `cycle_read_iter` for these values.
+  ///
+  /// Only a single "metric" may be read per iteration, however various
+  /// combined pseudo-metrics can be be used to read more data, including
+  /// `METRIC_COMBINED_ALL`.
+  ///
+  /// See the `MetricReadIterator` documentation for further information.
+  ///
+  /// # Example
+  /// ```no_run
+  /// use std::time::Duration;
+  /// use metriful::{Metriful, metric::*};
+  ///
+  /// # fn main() -> metriful::error::Result<()> {
+  /// let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+  ///
+  /// let iter = metriful.read_iter_timeout(
+  ///   *METRIC_COMBINED_ALL,
+  ///   Duration::from_secs(3),
+  ///   Some(Duration::from_secs(3))
+  /// );
+  /// for metric in iter {
+  ///   let metric = metric?;
+  ///   println!("{}", metric);
+  /// }
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn read_iter_timeout<'a, U>(
     &'a mut self,
     metric: Metric<U>,
@@ -549,7 +596,36 @@ impl Metriful {
 
   /// Returns an iterator that reads the given metric repeatedly at a given
   /// interval. Note that the thread will block for `interval` duration on each
-  /// read.
+  /// read. It reads indefinitely or until an error occurs.
+  ///
+  /// Note that this iterator performs "on-demand" measurements and as such
+  /// certain metrics will not be available, particularly air quality data.
+  /// Consider using `cycle_read_iter` for these values.
+  ///
+  /// Only a single "metric" may be read per iteration, however various
+  /// combined pseudo-metrics can be be used to read more data, including
+  /// `METRIC_COMBINED_ALL`.
+  ///
+  /// This may block indefinitely if device communication fails; consider using
+  /// `read_iter_timeout(...)` to specify a timeout.
+  ///
+  /// See the `MetricReadIterator` documentation for further information.
+  ///
+  /// # Example
+  /// ```no_run
+  /// use std::time::Duration;
+  /// use metriful::{Metriful, metric::*};
+  ///
+  /// # fn main() -> metriful::error::Result<()> {
+  /// let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+  ///
+  /// for metric in metriful.read_iter(*METRIC_COMBINED_ALL, Duration::from_secs(3)) {
+  ///   let metric = metric?;
+  ///   println!("{}", metric);
+  /// }
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn read_iter<'a, U>(
     &'a mut self,
     metric: Metric<U>,
@@ -568,6 +644,38 @@ impl Metriful {
     }
   }
 
+  /// Returns an iterator that reads the given metric repeatedly at the given
+  /// device-supported `CyclePeriod`. Note that the thread will block for
+  /// `interval` duration on each read. It reads indefinitely or until an error
+  /// occurs.
+  ///
+  /// Only a single "metric" may be read per iteration, however various
+  /// combined pseudo-metrics can be be used to read more data, including
+  /// `METRIC_COMBINED_ALL`.
+  ///
+  /// See the `CycleReadIterator` documentation for further information.
+  ///
+  /// # Example
+  /// ```no_run
+  /// use std::time::Duration;
+  /// use metriful::{Metriful, CyclePeriod, metric::*};
+  ///
+  /// # fn main() -> metriful::error::Result<()> {
+  /// let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+  ///
+  /// let iter = metriful.cycle_read_iter_timeout(
+  ///   *METRIC_COMBINED_ALL,
+  ///   CyclePeriod::Period0,
+  ///   Some(Duration::from_secs(3)),
+  /// );
+  ///
+  /// for metric in iter {
+  ///   let metric = metric?;
+  ///   println!("{}", metric);
+  /// }
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn cycle_read_iter_timeout<'a, U>(
     &'a mut self,
     metric: Metric<U>,
@@ -587,6 +695,20 @@ impl Metriful {
     }
   }
 
+  /// Fetches the current device status. This does *not* wait for the device to
+  /// become ready and may fail if `Metriful::is_ready()` is false.
+  ///
+  /// # Example
+  /// ```no_run
+  /// use metriful::Metriful;
+  ///
+  /// # fn main() -> metriful::error::Result<()> {
+  /// let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+  ///
+  /// println!("{:#?}", metriful.read_status()?);
+  /// # Ok(())
+  /// # }
+  /// ```
   pub fn read_status(&mut self) -> Result<DeviceStatus> {
     let status = DeviceStatus::read(&mut self.device)?;
     self.status = Some(status.clone());
