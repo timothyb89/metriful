@@ -1,8 +1,12 @@
-use std::{fmt, path::Path, thread, time::{Duration, Instant}};
+use std::fmt;
+use std::path::Path;
+use std::time::{Duration, Instant};
+use std::sync::mpsc::{channel, Sender, Receiver};
+use std::thread::{self, JoinHandle};
 
 use i2cdev::core::*;
 use i2cdev::linux::LinuxI2CDevice;
-use log::{trace};
+use log::trace;
 use sysfs_gpio::{Direction, Pin};
 
 pub mod error;
@@ -693,6 +697,66 @@ impl Metriful {
       cycle_period,
       timeout,
     }
+  }
+
+  /// Spawns an async cycle read thread that reports metrics.
+  ///
+  /// This function returns three objects callers may interact with:
+  ///  * `cmd_tx`: send the unit value `()` via this channel to ask the
+  ///    background thread to terminate, e.g. `cmd_tx.send(())?`
+  ///  * `metric_rx`: read metrics are periodically sent here
+  ///  * `handle`: a thread JoinHandle
+  ///
+  /// This takes ownership of the `Metriful` instance for as long as the
+  /// background thread is alive. The original owned `Metriful` is returned
+  /// via `.join()` on the returned `JoinHandle`. Send the unit value `()` via
+  /// `cmd_tx` (e.g. `cmd_tx.send(())?`) to ask the thread to terminate before
+  /// attempting to join it to avoid a deadlock.
+  ///
+  /// If an error occurs, it will be sent via `metric_rx` and the thread will
+  /// terminate.
+  pub fn async_cycle_read_timeout<U>(
+    mut self,
+    metric: Metric<U>,
+    cycle_period: CyclePeriod,
+    timeout: Option<Duration>,
+  ) -> (Sender<()>, Receiver<Result<UnitValue<U>>>, JoinHandle<Metriful>)
+  where
+    U: MetrifulUnit + 'static
+  {
+    let (cmd_tx, cmd_rx) = channel();
+    let (metric_tx, metric_rx) = channel();
+
+    let handle = thread::spawn(move || {
+      let iter = self.cycle_read_iter_timeout(metric, cycle_period, timeout);
+
+      for metric in iter {
+        if cmd_rx.try_recv().is_ok() {
+          trace!("Metriful::async_cycle_read_timeout(): break");
+          break;
+        }
+
+        let metric = match metric {
+          Ok(m) => m,
+          Err(e) => {
+            metric_tx.send(Err(e)).ok();
+            break;
+          }
+        };
+
+        match metric_tx.send(Ok(metric)) {
+          Ok(_) => (),
+          Err(_e) => {
+            // channel is dead, just quit
+            break;
+          }
+        }
+      }
+
+      self
+    });
+
+    (cmd_tx, metric_rx, handle)
   }
 
   /// Fetches the current device status. This does *not* wait for the device to

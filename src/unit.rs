@@ -78,10 +78,10 @@ impl From<Option<&'static str>> for UnitSymbol {
   }
 }
 
-pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone {
+pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone + Send + Sync {
   /// This unit's native datatype.
-  #[cfg(feature = "serde")] type Output: fmt::Display + fmt::Debug + Serialize;
-  #[cfg(not(feature = "serde"))] type Output: fmt::Display + fmt::Debug;
+  #[cfg(feature = "serde")] type Output: fmt::Display + fmt::Debug + Serialize + Send + Sync;
+  #[cfg(not(feature = "serde"))] type Output: fmt::Display + fmt::Debug + Send + Sync;
 
   /// The human-readable name of the unit
   fn name() -> &'static str;

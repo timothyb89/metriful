@@ -48,7 +48,7 @@ pub enum MetrifulError {
   DecibelBandsError,
 
   #[error(display = "combined data may not be constructed from bytes")]
-  InvalidCombinedDataFromBytes
+  InvalidCombinedDataFromBytes,
 }
 
 pub type Result<T> = std::result::Result<T, MetrifulError>;

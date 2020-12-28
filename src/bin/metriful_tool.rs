@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::thread;
 
-use color_eyre::eyre::{Result, Error, Context, WrapErr, eyre};
+use color_eyre::eyre::{Result, Error, Context, eyre};
 use log::*;
 use structopt::StructOpt;
 
@@ -99,6 +99,10 @@ enum Action {
 
   /// Displays sensor events in cycle mode
   CycleWatch(CycleWatchAction),
+
+  /// Displays sensor events in async cycle mode. This is meant as a library
+  /// example and is not functionally different from regular `cycle-watch`.
+  CycleWatchAsync(CycleWatchAction),
 }
 
 fn parse_duration_secs(s: &str) -> Result<Duration> {
@@ -199,13 +203,40 @@ fn watch(opts: &Options, action: &WatchAction, mut metriful: Metriful) -> Result
 }
 
 fn cycle_watch(opts: &Options, action: &CycleWatchAction, mut metriful: Metriful) -> Result<()> {
+  let iter = metriful.cycle_read_iter_timeout(
+    *METRIC_COMBINED_ALL,
+    action.interval,
+    opts.timeout
+  );
+  for value in iter {
+    let value = value?;
+
+    match &action.output {
+      OutputMode::Plain => {
+        println!("{}", value);
+        println!("---");
+      },
+      OutputMode::JSON => {
+        println!("{}", serde_json::to_string(&value)?)
+      }
+      OutputMode::CSV => return Err(eyre!("csv output not implemented")),
+    }
+  }
+
+  Ok(())
+}
+
+fn cycle_watch_async(opts: &Options, action: &CycleWatchAction, metriful: Metriful) -> Result<()> {
+  let (_cmd_tx, metric_rx, _handle) = metriful.async_cycle_read_timeout(
+    *METRIC_COMBINED_ALL,
+    action.interval,
+    opts.timeout
+  );
+
   loop {
-    let iter = metriful.cycle_read_iter_timeout(
-      *METRIC_COMBINED_ALL,
-      action.interval,
-      opts.timeout
-    );
-    for value in iter {
+    if let Ok(value) = metric_rx.try_recv() {
+      println!();
+
       let value = value?;
 
       match &action.output {
@@ -219,6 +250,8 @@ fn cycle_watch(opts: &Options, action: &CycleWatchAction, mut metriful: Metriful
         OutputMode::CSV => return Err(eyre!("csv output not implemented")),
       }
     }
+
+    thread::sleep(Duration::from_millis(100));
   }
 }
 
@@ -247,6 +280,7 @@ fn main() -> Result<()> {
     Action::Reset => reset(&opts, metriful)?,
     Action::Watch(action) => watch(&opts, &action, metriful)?,
     Action::CycleWatch(action) => cycle_watch(&opts, &action, metriful)?,
+    Action::CycleWatchAsync(action) => cycle_watch_async(&opts, &action, metriful)?,
   };
 
   Ok(())

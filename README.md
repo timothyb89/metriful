@@ -174,3 +174,55 @@ input from the SDS011.
 
 They cannot currently be configured, however the library can query the interrupt
 configuration. See also: `metriful-tool info`
+
+### The device never becomes ready / is always ready and/or read iterators get stuck. What gives?
+
+This can happen if the ready pin is misconfigured; check your pin numbers. Note
+that on the Raspberry Pi, GPIO IDs **do not match** pin numbers; refer to the
+[GPIO documentation][gpio-docs] for a graphical map of pin numbers to GPIO IDs.
+
+The particular symptoms of this problem vary depending on your host device and
+any preexisting GPIO configuration. The simplest way to ensure everything is
+configured properly is to use `metriful-tool cycle-watch`, as it will get stuck
+on or after the first read if the READY pin is not working properly.
+
+Additionally, if running via `sudo`, be aware that environment variables are
+not passed through by default:
+
+```bash
+# this won't work
+export GPIO_READY=17
+sudo metriful-tool cycle-watch
+
+# this will work
+sudo GPIO_READY=17 metriful-tool cycle-watch
+```
+
+[gpio-docs]: https://www.raspberrypi.org/documentation/usage/gpio/
+
+### Can the library be used asynchronously?
+
+Ultimately the device is single-threaded, however it can be managed via a
+background thread. All necessary values are `Send + Sync`, so if desired it
+can be configured and handed off to a background thread to report values
+asynchronously via a channel.
+
+This is natively supported for cycle reads:
+
+```rust
+use std::time::Duration;
+use metriful::{Metriful, CyclePeriod, metric::*};
+
+fn main() -> metriful::error::Result<()> {
+  let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+  let (_cmd_tx, metric_rx, _handle) = metriful.async_cycle_read_timeout(
+    *METRIC_COMBINED_ALL,
+    CyclePeriod::Period0,
+    Some(Duration::from_secs(3))
+  );
+
+  for metric in metric_rx {
+    // ...
+  }
+}
+```
