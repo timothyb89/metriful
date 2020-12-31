@@ -14,10 +14,23 @@ use crate::metric::*;
 use crate::util::*;
 
 /// A combined unit and value, generally the result of a metric read.
+///
+/// Note that the various "combined read" metrics will contain structs with
+/// nested `UnitValue`s in their respective `value` field.
+///
+/// All `UnitValue` instances 
 #[derive(Debug, Clone)]
 pub struct UnitValue<U> where U: MetrifulUnit {
+  /// The unit of the read value, including name and symbol.
+  ///
+  /// Units also have utility functions for formatting values in a
+  /// human-readable, type-specific manner.
   pub unit: U,
+
+  /// The read value in its native datatype
   pub value: U::Output,
+  
+  /// The system time (UTC) when the metric was read by the library.
   pub time: DateTime<Utc>,
 }
 

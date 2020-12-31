@@ -1,3 +1,61 @@
+//! A library for configuring and reading from Metriful MS430 indoor
+//! environment sensors.
+//!
+//! This library targets Raspberry Pis and other Linux-based hosts as supported
+//! by [`i2cdev`] and [`sysfs_gpio`].
+//!
+//! ### Getting Started
+//! 
+//! The library is designed to be straightforward to use:
+//!  1. Connect the device per [Metriful's docs](https://github.com/metriful/sensor#raspberry-pi)
+//!  2. Open the device using [`Metriful::try_new_timeout()`]
+//!  3. Read metrics using one of the various helper functions:
+//!     * [`Metriful::read_iter_timeout()`]: reads continuously at a
+//!       user-defined interval
+//!     * [`Metriful::cycle_read_iter_timeout()`]: reads continuously at a set
+//!       interval with the device in cycle mode
+//!     * [`Metriful::async_cycle_read_timeout()`]: reads continuously in a
+//!       background thread and reports results via a
+//!       [`std::sync::mpsc::channel`]
+//!     * [`Metriful::read()`]: to read a single metric once
+//!
+//! The various read functions need to be told which metric to read; see the
+//! [`metric`] module for a complete list of possibilities. To read more than
+//! one metric at once, a number of "combined read" pseudo-metrics are
+//! provided:
+//!  * [`struct@METRIC_COMBINED_AIR_DATA`]: all air data
+//!  * [`struct@METRIC_COMBINED_AIR_QUALITY_DATA`]: all air quality data; only valid
+//!    in cycle mode
+//!  * [`struct@METRIC_COMBINED_LIGHT_DATA`]: all light data
+//!  * [`struct@METRIC_COMBINED_SOUND_DATA`]: all sound data
+//!  * [`struct@METRIC_COMBINED_PARTICLE_DATA`]: all particle data; only valid if an
+//!    external particulate sensor is attached
+//!  * [`struct@METRIC_COMBINED_ALL`]: all data; air quality data is only valid in
+//!    cycle mode
+//!
+//! ### Example
+//! To open the device and continuously read all available metrics:
+//! 
+//! ```no_run
+//! use std::time::Duration;
+//! use metriful::{Metriful, CyclePeriod, metric::*};
+//!
+//! # fn main() -> metriful::error::Result<()> {
+//! let mut metriful = Metriful::try_new(17, "/dev/i2c-1", 0x71)?;
+//!
+//! let iter = metriful.cycle_read_iter_timeout(
+//!   *METRIC_COMBINED_ALL,
+//!   CyclePeriod::Period0,
+//!   Some(Duration::from_secs(3))
+//! );
+//! for metric in iter {
+//!   let metric = metric?;
+//!   println!("{}", metric);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+
 use std::fmt;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -182,13 +240,13 @@ impl fmt::Debug for Metriful {
 }
 
 impl Metriful {
-  /// Creates a new Metriful given a preexisting GPIO `Pin` and
-  /// `LinuxI2CDevice`. This ensures the device is ready and fetches the current
-  /// state. Returns an error if the timeout is set and exceeded, or if device
-  /// status cannot be read.
+  /// Creates a new Metriful given a preexisting GPIO [`Pin`] and
+  /// [`LinuxI2CDevice`]. This ensures the device is ready and fetches the
+  /// current state. Returns an error if the timeout is set and exceeded, or if
+  /// device status cannot be read.
   ///
   /// Note that this does not reset the device. The manual recommends doing so
-  /// before use; call `Metriful::reset()` to do so.
+  /// before use; call [`Metriful::reset()`] to do so.
   pub fn try_new_device_timeout(
     ready_pin: Pin,
     device: LinuxI2CDevice,
@@ -212,7 +270,7 @@ impl Metriful {
   /// timeout or if current status cannot be read.
   ///
   /// Note that this does not reset the device. The manual recommends doing so
-  /// before use; call `Metriful::reset()` to do so.
+  /// before use; call [`Metriful::reset()`] to do so.
   pub fn try_new_timeout(
     gpio_ready: u64,
     i2c_device: impl AsRef<Path>,
@@ -248,7 +306,7 @@ impl Metriful {
   /// if the device does not become ready.
   ///
   /// Note that this does not reset the device. The manual recommends doing so
-  /// before use; call `Metriful::reset()` to do so.
+  /// before use; call [`Metriful::reset()`] to do so.
   pub fn try_new(
     gpio_ready: u64,
     i2c_device: impl AsRef<Path>,
@@ -293,7 +351,7 @@ impl Metriful {
     }
   }
 
-  /// Sleeps the thread until `Metriful::is_ready()` returns true, polling every
+  /// Sleeps the thread until [`Metriful::is_ready()`] returns true, polling every
   /// 10ms. If a timeout is set and exceeded, returns an error.
   pub fn wait_for_ready_timeout(&self, timeout: Option<Duration>) -> Result<()> {
     let start = Instant::now();
@@ -315,15 +373,16 @@ impl Metriful {
     }
   }
 
-  /// Sleeps the thread until `Metriful::is_ready()` returns true, polling every
-  /// 10ms. This has no timeout and will wait indefinitely; see
-  /// `wait_for_ready_timeout` if a timeout is desired.
+  /// Sleeps the thread until [`Metriful::is_ready()`] returns true, polling
+  /// every 10ms. This has no timeout and will wait indefinitely; see
+  /// [`Metriful::wait_for_ready_timeout()`] if a timeout is desired.
   pub fn wait_for_ready(&self) -> Result<()> {
     self.wait_for_ready_timeout(None)
   }
 
-  /// The inverse of `wait_for_ready_timeout`, this waits until the device is
-  /// explicitly not ready, useful for e.g. waiting for a new cycle period.
+  /// The inverse of [`Metriful::wait_for_ready_timeout()`], this waits until
+  /// the device is explicitly **not** ready, useful for e.g. waiting for a new
+  /// cycle period.
   pub fn wait_for_not_ready_timeout(&self, timeout: Option<Duration>) -> Result<()> {
     let start = Instant::now();
 
@@ -368,7 +427,7 @@ impl Metriful {
     }
   }
 
-  /// Waits for `Metriful::is_ready()` to become true and executes the given
+  /// Waits for [`Metriful::is_ready()`] to become true and executes the given
   /// function. This has no timeout and may wait indefinitely.
   pub fn execute_when_ready<T>(
     &mut self,
@@ -378,8 +437,8 @@ impl Metriful {
   }
 
   /// Sends a device reset command, waits for it to become ready again, and
-  /// returns a refreshed `DeviceStatus`. Raises an error if the device is not
-  /// initially ready.
+  /// returns a refreshed [`DeviceStatus`]. Raises an error if the device i
+  /// not initially ready.
   pub fn reset(&mut self) -> Result<DeviceStatus> {
     self.ensure_ready()?;
 
@@ -419,8 +478,8 @@ impl Metriful {
   ///
   /// This does not ensure the READY pin is asserted, nor does it ensure the
   /// given operational mode can be set directly, as changing the cycle time
-  /// requires the device to be in standby mode. Use `set_mode()` to handle
-  /// these cases automatically.
+  /// requires the device to be in standby mode. Use [`Metriful::set_mode()`]
+  /// to handle these cases automatically.
   ///
   /// Per the datasheet, the device will take some time to become READY again
   /// after changing the mode:
@@ -551,13 +610,13 @@ impl Metriful {
   ///
   /// Note that this iterator performs "on-demand" measurements and as such
   /// certain metrics will not be available, particularly air quality data.
-  /// Consider using `cycle_read_iter` for these values.
+  /// Consider using [`Metriful::cycle_read_iter_timeout()`] for these values.
   ///
   /// Only a single "metric" may be read per iteration, however various
   /// combined pseudo-metrics can be be used to read more data, including
-  /// `METRIC_COMBINED_ALL`.
+  /// [`struct@METRIC_COMBINED_ALL`].
   ///
-  /// See the `MetricReadIterator` documentation for further information.
+  /// See the [`MetricReadIterator`] documentation for further information.
   ///
   /// # Example
   /// ```no_run
@@ -604,16 +663,16 @@ impl Metriful {
   ///
   /// Note that this iterator performs "on-demand" measurements and as such
   /// certain metrics will not be available, particularly air quality data.
-  /// Consider using `cycle_read_iter` for these values.
+  /// Consider using [`Metriful::cycle_read_iter_timeout()`] for these values.
   ///
   /// Only a single "metric" may be read per iteration, however various
   /// combined pseudo-metrics can be be used to read more data, including
-  /// `METRIC_COMBINED_ALL`.
+  /// [`struct@METRIC_COMBINED_ALL`].
   ///
   /// This may block indefinitely if device communication fails; consider using
-  /// `read_iter_timeout(...)` to specify a timeout.
+  /// [`Metriful::read_iter_timeout()`] to specify a timeout.
   ///
-  /// See the `MetricReadIterator` documentation for further information.
+  /// See the [`MetricReadIterator`] documentation for further information.
   ///
   /// # Example
   /// ```no_run
@@ -649,15 +708,15 @@ impl Metriful {
   }
 
   /// Returns an iterator that reads the given metric repeatedly at the given
-  /// device-supported `CyclePeriod`. Note that the thread will block for
+  /// device-supported [`CyclePeriod`]. Note that the thread will block for
   /// `interval` duration on each read. It reads indefinitely or until an error
   /// occurs.
   ///
   /// Only a single "metric" may be read per iteration, however various
   /// combined pseudo-metrics can be be used to read more data, including
-  /// `METRIC_COMBINED_ALL`.
+  /// [`struct@METRIC_COMBINED_ALL`].
   ///
-  /// See the `CycleReadIterator` documentation for further information.
+  /// See the [`CycleReadIterator`] documentation for further information.
   ///
   /// # Example
   /// ```no_run
@@ -708,7 +767,7 @@ impl Metriful {
   ///  * `handle`: a thread JoinHandle
   ///
   /// This takes ownership of the `Metriful` instance for as long as the
-  /// background thread is alive. The original owned `Metriful` is returned
+  /// background thread is alive. The original owned [`Metriful`] is returned
   /// via `.join()` on the returned `JoinHandle`. Send the unit value `()` via
   /// `cmd_tx` (e.g. `cmd_tx.send(())?`) to ask the thread to terminate before
   /// attempting to join it to avoid a deadlock.
@@ -760,7 +819,7 @@ impl Metriful {
   }
 
   /// Fetches the current device status. This does *not* wait for the device to
-  /// become ready and may fail if `Metriful::is_ready()` is false.
+  /// become ready and may fail if [`Metriful::is_ready()`] is false.
   ///
   /// # Example
   /// ```no_run

@@ -1,10 +1,15 @@
 [package]
 name = "metriful"
+description = "A library and set of utilities for Metriful MS430 indoor environment sensors"
+keywords = ["sensor", "metriful", "prometheus", "raspberry-pi"]
 version = "0.1.0"
 authors = ["Tim Buckley <timothyb89@gmail.com>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/timothyb89/metriful/"
+repository = "https://github.com/timothyb89/metriful/"
+exclude = ["/etc/**/*", "/Dockerfile.*", "**/*.pdf"]
 
 [dependencies]
 # base requirements

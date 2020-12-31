@@ -1,3 +1,24 @@
+//! All supported metric definitions and unit/register associations.
+//!
+//! All read functions, e.g. [`Metriful::read()`](fn@crate::Metriful::read), only accept a single metric
+//! definition. To read multiple metrics at once, instead use one of the
+//! "combined read" pseudo-metrics:
+//!  * [`struct@METRIC_COMBINED_AIR_DATA`]: all air data
+//!  * [`struct@METRIC_COMBINED_AIR_QUALITY_DATA`]: all air quality data; only valid
+//!    in cycle mode
+//!  * [`struct@METRIC_COMBINED_LIGHT_DATA`]: all light data
+//!  * [`struct@METRIC_COMBINED_SOUND_DATA`]: all sound data
+//!  * [`struct@METRIC_COMBINED_PARTICLE_DATA`]: all particle data; only valid if an
+//!    external particulate sensor is attached
+//!  * [`struct@METRIC_COMBINED_ALL`]: all data; air quality data is only valid in
+//!    cycle mode
+//!
+//! Note that these are currently [`mod@lazy_static`] singleton instances and
+//! as such need to be dereferenced before use, e.g.
+//! `Metriful::read(*METRIC_TEMPERATURE)`.
+//!
+//! This limitation is likely to change as const generics stabilizes.
+
 use chrono::Utc;
 use i2cdev::linux::LinuxI2CDevice;
 use lazy_static::lazy_static;
