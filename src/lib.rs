@@ -399,6 +399,8 @@ impl Metriful {
         } else {
           thread::sleep(Duration::from_millis(READY_POLL_INTERVAL));
         }
+      } else {
+        thread::sleep(Duration::from_millis(READY_POLL_INTERVAL));
       }
     }
   }

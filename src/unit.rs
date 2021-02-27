@@ -99,8 +99,18 @@ pub trait MetrifulUnit: Sized + Default + fmt::Debug + Copy + Clone + Send + Syn
   /// The human-readable name of the unit
   fn name() -> &'static str;
 
+  /// Instance-accessible `name()`
+  fn get_name(&self) -> &'static str {
+    Self::name()
+  }
+
   /// The human-readable symbol for this unit
   fn symbol() -> Option<&'static str>;
+
+  /// Instance-accessible `symbol()`
+  fn get_symbol(&self) -> Option<&'static str> {
+    Self::symbol()
+  }
 
   fn format_value(value: &Self::Output) -> String {
     if let Some(symbol) = Self::symbol() {
@@ -212,7 +222,7 @@ impl MetrifulUnit for UnitResistance {
   type Output = u32;
 
   fn name() -> &'static str {
-    "resistance"
+    "ohms"
   }
 
   fn symbol() -> Option<&'static str> {
@@ -350,6 +360,15 @@ impl AQIAccuracy {
       2 => Ok(AQIAccuracy::Medium),
       3 => Ok(AQIAccuracy::High,),
       _ => Err(MetrifulError::InvalidAQIAccuracy(byte))
+    }
+  }
+
+  pub fn to_uint(&self) -> u8 {
+    match self {
+      AQIAccuracy::Invalid => 0,
+      AQIAccuracy::Low => 1,
+      AQIAccuracy::Medium => 2,
+      AQIAccuracy::High => 3
     }
   }
 }
@@ -563,7 +582,7 @@ impl MetrifulUnit for UnitAWeightedSPL {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
-pub struct SPLFrequencyBands([f32; 6]);
+pub struct SPLFrequencyBands(pub [f32; 6]);
 
 impl fmt::Display for SPLFrequencyBands {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -639,6 +658,16 @@ pub enum SoundMeasurementStability {
 
   /// Microphone initialization still ongoing
   Unstable
+}
+
+impl SoundMeasurementStability {
+  /// Converts this value to an int: 0 (unstable), 1 (stable)
+  pub fn to_uint(&self) -> u8 {
+    match self {
+      SoundMeasurementStability::Stable => 1,
+      SoundMeasurementStability::Unstable => 0
+    }
+  }
 }
 
 impl fmt::Display for SoundMeasurementStability {

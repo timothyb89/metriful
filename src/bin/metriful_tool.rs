@@ -81,7 +81,7 @@ struct CycleWatchAction {
   output: OutputMode,
 
   /// Cycle period, one of: 0 (3s), 1 (100s), 2 (300s)
-  #[structopt(long, short, default_value = "3s")]
+  #[structopt(long, short, default_value = "3s", env = "METRIFUL_INTERVAL")]
   interval: CyclePeriod
 }
 
@@ -115,22 +115,44 @@ fn parse_duration_secs(s: &str) -> Result<Duration> {
 #[structopt(name = "metriful-tool")]
 struct Options {
   /// system i2c device, e.g. /dev/i2c-1
-  #[structopt(long, short, parse(from_os_str), default_value = "/dev/i2c-1", global = true)]
+  #[structopt(
+    long, short,
+    parse(from_os_str),
+    default_value = "/dev/i2c-1",
+    global = true,
+    env = "METRIFUL_I2C_DEVICE"
+  )]
   device: PathBuf,
 
   /// Metriful device i2c address; usually 0x71, or 0x71 if the solder bridge is
   /// closed. Can specify a plain base-10 int or hex with a `0x` prefix.
-  #[structopt(long, parse(try_from_str = try_from_hex_arg), default_value = "0x71", global = true)]
+  #[structopt(
+    long,
+    parse(try_from_str = try_from_hex_arg),
+    default_value = "0x71",
+    global = true,
+    env = "METRIFUL_I2C_ADDRESS"
+  )]
   i2c_address: u16,
 
   /// GPIO number for the ready signal. Note that this is a GPIO number, not a
   /// physical pin number - the mapping between the two numbers varies by
   /// device.
-  #[structopt(long, default_value = "11", env = "GPIO_READY", global = true)]
+  #[structopt(
+    long,
+    default_value = "11",
+    env = "METRIFUL_GPIO_READY",
+    global = true
+  )]
   gpio_ready: u64,
 
   /// Global timeout for any individual sensor command in seconds.
-  #[structopt(long, parse(try_from_str = parse_duration_secs), global = true)]
+  #[structopt(
+    long,
+    parse(try_from_str = parse_duration_secs),
+    global = true,
+    env = "METRIFUL_TIMEOUT"
+  )]
   timeout: Option<Duration>,
 
   #[structopt(subcommand)]
