@@ -296,7 +296,6 @@ async fn main() -> Result<()> {
   let data_error_count = Arc::clone(&error_count);
   task::spawn_blocking(move || {
     for reading in rx.iter() {
-      trace!("exporter: received new reading");
       match reading {
         Ok(reading) => match data_lock.try_write() {
           Ok(mut r) => {
