@@ -294,9 +294,9 @@ async fn main() -> Result<()> {
   let data_lock = Arc::clone(&latest_reading_lock);
   let data_read_count = Arc::clone(&read_count);
   let data_error_count = Arc::clone(&error_count);
-  task::spawn(async move {
-    let mut s = stream::iter(rx);
-    while let Some(reading) = s.next().await {
+  task::spawn_blocking(move || {
+    for reading in rx.iter() {
+      trace!("exporter: received new reading");
       match reading {
         Ok(reading) => match data_lock.try_write() {
           Ok(mut r) => {
@@ -322,6 +322,7 @@ async fn main() -> Result<()> {
   let json_error_count = Arc::clone(&error_count);
   let json_opts = opts.clone();
   let r_json = warp::path("json").map(move || {
+    trace!("exporter: /json");
     match *json_lock.read().unwrap() {
       Some(ref r) => warp::reply::json(&json!({
         "initial_status": &initial_status,
@@ -339,6 +340,7 @@ async fn main() -> Result<()> {
   let metrics_read_count = Arc::clone(&read_count);
   let metrics_error_count = Arc::clone(&error_count);
   let r_metrics = warp::path("metrics").map(move || {
+    trace!("exporter: /metrics");
     export_reading(
       &exporter,
       &*metrics_lock.read().unwrap(),
