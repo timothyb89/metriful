@@ -12,7 +12,6 @@ use serde_json::{self, json};
 use simple_prometheus_exporter::{Exporter, export};
 use structopt::StructOpt;
 use tokio::task;
-use tokio_stream::{self as stream, StreamExt};
 use warp::Filter;
 
 fn try_from_hex_arg(s: &str) -> Result<u16> {
